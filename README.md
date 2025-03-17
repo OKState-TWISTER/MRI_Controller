@@ -32,10 +32,7 @@ Stepper Motor Elevation (ENA) - GPIO 25
       - `os`: For file and directory operations.
       - `datetime`: To get and format the current date.
 
-    To install dependencies, use the following commands:
-    ```bash
-    pip install numpy scipy keyboard twister_api
-    ```
+    To install dependencies, use the pip installer with your preferred version of Python 3
 
 
 ## Usage
