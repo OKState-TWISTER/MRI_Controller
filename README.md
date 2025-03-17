@@ -10,14 +10,12 @@ This guide explains how to set up and use the **2D Sweep Measurement System**. T
 Before using the system, ensure the following:
 
 1. **Hardware Setup**:
-| Hardware Component        | GPIO Pin | Description                   |
-|---------------------------|----------|-------------------------------|
-| Stepper Motor Azimuth (PUL)| 22       | Pulse pin for azimuth movement |
-| Stepper Motor Azimuth (DIR)| 27       | Direction pin for azimuth movement |
-| Stepper Motor Azimuth (ENA)| 17       | Enable pin for azimuth motor   |
-| Stepper Motor Elevation (PUL)| 23     | Pulse pin for elevation movement |
-| Stepper Motor Elevation (DIR)| 24     | Direction pin for elevation movement |
-| Stepper Motor Elevation (ENA)| 25     | Enable pin for elevation motor |
+Stepper Motor Azimuth (PUL) - GPIO 22   
+Stepper Motor Azimuth (DIR) - GPIO 27       
+Stepper Motor Azimuth (ENA) - GPIO 17  
+Stepper Motor Elevation (PUL) - GPIO 23   
+Stepper Motor Elevation (DIR) - GPIO 24     
+Stepper Motor Elevation (ENA) - GPIO 25   
 
 2. **Software Setup**:
     - Install Python 3 and necessary libraries. The following libraries are used in the code:
