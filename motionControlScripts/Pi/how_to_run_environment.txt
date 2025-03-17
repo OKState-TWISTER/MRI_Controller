@@ -1,0 +1,8 @@
+This installation requires some things (MotorKit) to be run in a virtual environment.
+
+NOTE: May no longer be necessary now that we're using a motor controller instead of the MotorKit hat.
+
+You must execute: 'source env/bin/activate' from the command line before 
+running any script which uses MotorKit.
+Do this from the home directory (must have access to env folder)
+Then you may change to the project directory. 
