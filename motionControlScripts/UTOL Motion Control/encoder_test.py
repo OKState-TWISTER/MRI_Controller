@@ -3,7 +3,7 @@ import spidev
 import time
 
 # SPI setup
-CS_PIN = 26  # GPIO pin used for Chip Select (CE0 for SPI on Raspberry Pi)
+CS_PIN = 25  # GPIO pin used for Chip Select (CE0 for SPI on Raspberry Pi)
 # Serial baudrate (not needed for SPI, but useful for debug output)
 BAUDRATE = 115200
 

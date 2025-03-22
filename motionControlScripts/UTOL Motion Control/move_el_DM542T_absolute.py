@@ -93,9 +93,12 @@ def encoder_to_degrees(encoder_position):
 
 def main(target):
     GPIO.output(ENA, False)  # Enable motor
+    encoder_position = read_encoder_position()
+    encoder_position &= 0x3FFF
+    start_angle = (encoder_position / 16384.0) * 360.0
 
     time.sleep(0.3)
-    set_zero_position()
+    # set_zero_position()
     while True:
         # Read position from encoder
         encoder_position = read_encoder_position()
@@ -106,22 +109,22 @@ def main(target):
             # Convert encoder position to degrees
             angle = (encoder_position / 16384.0) * 360.0
             if (target < 0):
-                angle = angle - 360
-                if (angle < -355):
-                    angle = -.00001
-            if (target > 0):
-                if (angle > 180):
-                    angle = 0
+                target = 360+target
+            angle_diff = target - angle
+            print("target:", target)
+            print("angle_diff:", angle_diff)
+            print("start_angle:", start_angle)
+
             print(
                 f"Encoder Position: {encoder_position} (Raw), Angle: {angle:.4f} degrees")
         else:
             print("Encoder position error.")
 
-        if (abs(angle) < abs(target)):
-            if (target > 0):
-                GPIO.output(DIR, False)  # True direction is negative degrees
+        if (abs(angle_diff) > .022):
+            if target > 180 and (start_angle < 180 or start_angle > target):
+                GPIO.output(DIR, True)  # True direction is negative degrees
             else:
-                GPIO.output(DIR, True)
+                GPIO.output(DIR, False)  # True direction is negative degrees
             GPIO.output(PUL, True)
             time.sleep(0.001)  # Adjust speed with delay
             GPIO.output(PUL, False)

@@ -1,9 +1,6 @@
 import RPi.GPIO as GPIO
 import spidev
 import time
-import sys
-
-deg = float(sys.argv[1])
 
 # GPIO Constants
 PUL = 21
@@ -107,11 +104,8 @@ def main(target):
             angle = (encoder_position / 16384.0) * 360.0
             if (target < 0):
                 angle = angle - 360
-                if (angle < -355):
+                if (angle == -360):
                     angle = -.00001
-            if (target > 0):
-                if (angle > 180):
-                    angle = 0
             print(
                 f"Encoder Position: {encoder_position} (Raw), Angle: {angle:.4f} degrees")
         else:
@@ -126,8 +120,6 @@ def main(target):
             time.sleep(0.001)  # Adjust speed with delay
             GPIO.output(PUL, False)
             time.sleep(0.001)
-        else:
-            break
 
         # Delay between reads (e.g., 100 ms)
         time.sleep(0.001)
@@ -135,9 +127,8 @@ def main(target):
 
 if __name__ == "__main__":
     try:
-        main(deg)
+        main(.3)
         GPIO.output(ENA, True)
-
     except KeyboardInterrupt:
         pass
     finally:
