@@ -111,9 +111,8 @@ def main(target):
             if (target < 0):
                 target = 360+target
             angle_diff = target - angle
-            print("target:", target)
-            print("angle_diff:", angle_diff)
-            print("start_angle:", start_angle)
+            # print("target:", target)
+            # print("angle_diff:", angle_diff)
 
             print(
                 f"Encoder Position: {encoder_position} (Raw), Angle: {angle:.4f} degrees")

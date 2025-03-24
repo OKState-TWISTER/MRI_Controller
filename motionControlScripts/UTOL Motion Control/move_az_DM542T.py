@@ -15,18 +15,18 @@ GPIO.setup(DIR, GPIO.OUT)  # DIR-
 GPIO.setup(ENA, GPIO.OUT)  # ENA-
 
 # Initialize all to off
-GPIO.output(ENA, True)
-GPIO.output(PUL, False)
-GPIO.output(DIR, False)
-
+# GPIO.output(ENA,True)
+# GPIO.output(PUL,False)
+# GPIO.output(DIR,False)
+time.sleep(0.1)
 # Move desired number of steps
 # steps = int(input('Enter number of steps: '))
 # steps = -4
-steps = round(400*abs(deg))
+steps = round(800*abs(deg))
 
 # Enable output and wait required time
 GPIO.output(ENA, False)
-time.sleep(0.3)
+time.sleep(.3)
 
 # Set direction
 if deg < 0:
@@ -46,7 +46,7 @@ for i in range(abs(steps)):
 
 # Make sure outputs are in safe configuration after loop
 GPIO.output(PUL, False)
-GPIO.output(ENA, True)
+# GPIO.output(ENA,True)
 
 
 # GPIO.cleanup()

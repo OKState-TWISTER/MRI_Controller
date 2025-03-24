@@ -107,7 +107,7 @@ def main(target):
             angle = (encoder_position / 16384.0) * 360.0
             if (target < 0):
                 angle = angle - 360
-                if (angle < -355):
+                if (angle < -350):
                     angle = -.00001
             if (target > 0):
                 if (angle > 180):

@@ -53,15 +53,15 @@ HOST = ""
 PORT = 0
 
 # Save path
-save_name = str(sys.argv[4])
+save_name = str(sys.argv[1])
 # save_folder = 'C:/Users/Ethan Abele/OneDrive - Oklahoma A and M System/THz Jitter/measurements_29April2024/AzElSweep/'
-save_folder = 'C:/Users/Ethan Abele/OneDrivae - Oklahoma A and M System/Research/THz Jitter/python_scripts/tests_6Feb2025/'
+save_folder = 'C:/Users/Ethan Abele/OneDrive - Oklahoma A and M System/Research/THz Jitter/python_scripts/tests_22March2025/rxGainPattern/'
 # save_name = 'Az_sweep_El_000'
 save_path = save_folder+save_name+'.mat'
 
 # Setup instrument
-scope = Oscilloscope(
-    visa_address="TCPIP0::192.168.27.10::inst0::INSTR", debug=True)
+# scope = Oscilloscope(
+#    visa_address="TCPIP0::192.168.27.10::inst0::INSTR", debug=True)
 # scope = Oscilloscope(visa_address="TCPIP0::10.10.10.10::inst0::INSTR",debug=True)
 
 
@@ -238,8 +238,8 @@ def setup():
 
 
 def generate_measurement_array(el_sweep_size, el_step_size, az_sweep_size, az_step_size):
-    az_values = int(az_sweep_size/az_step_size)
-    el_values = int(el_sweep_size/el_step_size)
+    az_values = int(az_sweep_size/az_step_size) + 1
+    el_values = int(el_sweep_size/el_step_size) + 1
 
     zero_grid = np.zeros((el_values, az_values))
     peak_val = np.zeros((el_values, az_values))
@@ -274,9 +274,10 @@ def take_measurement(i, j, az_pos, el_pos):
     peakPWR_temp = scope.get_fft_peak(2)
     peak_freq_temp = scope.do_query(f":FUNCtion2:FFT:PEAK:FREQ?")
     peak_val[i][j] = peakPWR_temp
-    peak_freq[i][j] = peak_freq_temp
+    peak_freq[i][j] = peak_freq_temp.strip('""')
     az_angle[i][j] = az_pos
     el_angle[i][j] = el_pos
+    print("Saving to: ", i, ", ", j)
 
 
 def move_to_start():
@@ -296,12 +297,28 @@ def move_to_start():
     return 0
 
 
+def return_to_start():
+    global az_current_angle, el_current_angle
+    # We know that the controller should be at 0 in both elevation and azimuth to start
+    # Move azimuth to start location
+    print("Moving to:")
+    print("Azimuth: 0")
+    print("Elevation: 0")
+    send_command(f'move_az_DM542T.py:{-az_current_angle}')
+    time.sleep(10)
+    send_command(f'move_el_DM542T_absolute.py:{-el_current_angle}')
+    time.sleep(SEND_DELAY)
+    az_current_angle = 0
+    el_current_angle = 0
+
+    return 0
+
+
 def sweep_2D(grid):
     global az_current_angle, el_current_angle, paused
     num_cols = grid.shape[1]
     num_rows = grid.shape[0]
 
-    take_measurement(0, 0, az_current_angle, el_current_angle)
     for i in range(num_rows):
         print("Scanning row: ", i)
         if keyboard.is_pressed('p'):
@@ -317,13 +334,14 @@ def sweep_2D(grid):
                     print("Sweep paused. Press 'r' to resume.")
                 if paused:
                     wait_for_resume()
-                send_command(f'move_az_DM542T.py:{az_step_size}')
-                az_current_angle += az_step_size
+
                 print("Current azimuth: ", az_current_angle,
                       "    Current elevation: ", el_current_angle)
                 time.sleep(az_delay)
-                take_measurement(0, 0, az_current_angle, el_current_angle)
+                take_measurement(i, j, az_current_angle, el_current_angle)
                 time.sleep(az_delay)
+                send_command(f'move_az_DM542T.py:{az_step_size}')
+                az_current_angle += az_step_size
 
         else:
             # Travel right to left on odd indexed roads
@@ -338,16 +356,15 @@ def sweep_2D(grid):
                 print("Current azimuth: ", az_current_angle,
                       "    Current elevation: ", el_current_angle)
                 time.sleep(az_delay)
-                take_measurement(0, 0, az_current_angle, el_current_angle)
+                take_measurement(i, j, az_current_angle, el_current_angle)
                 time.sleep(az_delay)
-        send_command(
-            f'move_el_DM542T_absolute.py:{el_start_angle + (i+1)*el_step_size}')
-        el_current_angle += el_step_size
-        print("Current azimuth: ", az_current_angle,
-              "    Current elevation: ", el_current_angle)
-        time.sleep(el_delay)
-
-        take_measurement(0, 0, az_current_angle, el_current_angle)
+        if i != num_rows-1:
+            send_command(
+                f'move_el_DM542T_absolute.py:{el_start_angle + (i+1)*el_step_size}')
+            el_current_angle += el_step_size
+            print("Current azimuth: ", az_current_angle,
+                  "    Current elevation: ", el_current_angle)
+            time.sleep(el_delay)
 
         if keyboard.is_pressed('p'):
             paused = True
@@ -364,7 +381,6 @@ read_config()
 grid, peak_val, peak_freq, az_angle, el_angle = generate_measurement_array(el_end_angle-el_start_angle,
                                                                            el_step_size, az_end_angle-az_start_angle, az_step_size)
 
-print(grid)
 send_command(f'move_el_DM542T.py:{0}')
 move_to_start()
 
@@ -373,6 +389,11 @@ input("Press any key to continue with sweep")
 
 sweep_2D(grid)
 
+# Flip every other row of the matrix to fix serpentine traversal problems
+az_angle[1::2] = az_angle[1::2, ::-1]
+peak_freq[1::2] = peak_freq[1::2, ::-1]
+peak_val[1::2] = peak_val[1::2, ::-1]
+
 mdict = {
     'peak_val': peak_val,
     'peak_freq': peak_freq,
@@ -380,3 +401,5 @@ mdict = {
     'el_angle': el_angle
 }
 scipy.io.savemat(save_path, mdict)
+
+return_to_start()
