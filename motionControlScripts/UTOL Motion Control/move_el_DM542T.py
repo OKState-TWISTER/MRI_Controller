@@ -35,9 +35,9 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setup(PUL, GPIO.OUT)
 GPIO.setup(DIR, GPIO.OUT)
 GPIO.setup(ENA, GPIO.OUT)
-GPIO.output(ENA, True)  # Disable motor initially
-GPIO.output(PUL, False)  # Set pulse pin low initially
-GPIO.output(DIR, False)  # Set direction initially
+# GPIO.output(ENA, True)  # Disable motor initially
+# GPIO.output(PUL, False)  # Set pulse pin low initially
+# GPIO.output(DIR, False)  # Set direction initially
 
 
 def read_encoder_position():
@@ -96,32 +96,23 @@ def main(target):
 
     time.sleep(0.3)
     set_zero_position()
+    encoder_target = target
+    if (target >= 0):
+        encoder_target = abs(target) % 360
+
     while True:
         # Read position from encoder
         encoder_position = read_encoder_position()
-
-        # Verify checksum and convert to degrees
-        if verify_checksum(encoder_position):
-            encoder_position &= 0x3FFF  # Mask the checksum bits
-            # Convert encoder position to degrees
-            angle = (encoder_position / 16384.0) * 360.0
-            if (target < 0):
-                angle = angle - 360
-                if (angle < -350):
-                    angle = -.00001
-            if (target > 0):
-                if (angle > 180):
-                    angle = 0
-            print(
-                f"Encoder Position: {encoder_position} (Raw), Angle: {angle:.4f} degrees")
+        encoder_position &= 0x3FFF
+        current_angle = encoder_to_degrees(encoder_position)
+        error = (encoder_target - current_angle + 540) % 360 - 180
+        print(
+            f"Encoder Position: {read_encoder_position()} (Raw), Angle: {current_angle:.4f} degrees")
+        if error > 0:
+            GPIO.output(DIR, False)
         else:
-            print("Encoder position error.")
-
-        if (abs(angle) < abs(target)):
-            if (target > 0):
-                GPIO.output(DIR, False)  # True direction is negative degrees
-            else:
-                GPIO.output(DIR, True)
+            GPIO.output(DIR, True)
+        if (abs(error) > .022):
             GPIO.output(PUL, True)
             time.sleep(0.001)  # Adjust speed with delay
             GPIO.output(PUL, False)
@@ -129,14 +120,13 @@ def main(target):
         else:
             break
 
-        # Delay between reads (e.g., 100 ms)
         time.sleep(0.001)
 
 
 if __name__ == "__main__":
     try:
-        main(deg)
-        GPIO.output(ENA, True)
+        main(-deg)
+       # GPIO.output(ENA, True)
 
     except KeyboardInterrupt:
         pass
