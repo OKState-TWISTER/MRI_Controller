@@ -206,7 +206,7 @@ def setup():
             elif current_key == 'a':
                 movement = -1 * float(az_step_size)
             elif current_key == 'w':
-                movement = 1 * float(el_step_size)
+                movement = float(el_step_size)
             elif current_key == 's':
                 movement = -1 * float(el_step_size)
             else:

@@ -106,8 +106,12 @@ def main(target):
         encoder_position &= 0x3FFF
         current_angle = encoder_to_degrees(encoder_position)
         error = (encoder_target - current_angle + 540) % 360 - 180
-        print(
-            f"Encoder Position: {read_encoder_position()} (Raw), Angle: {current_angle:.4f} degrees")
+        if (current_angle < 180):
+            print(
+                f"Angle: {-current_angle:.4f} degrees")
+        else:
+            print(
+                f"Angle: {-(current_angle-360):.4f} degrees")
         if error > 0:
             GPIO.output(DIR, False)
         else:
