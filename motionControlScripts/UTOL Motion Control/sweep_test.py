@@ -39,10 +39,10 @@ EL_STEP_INCREMENT = .022
 total_movement_az = 0.0
 total_movement_el = 0.0
 current_key = None  # Track the currently pressed key
-SEND_DELAY = 0.1
+SEND_DELAY = 0.3
 settling_time = 1  # Time allowed for settling/averaging between measurements
 az_delay = 0.6  # Azimuth movement time (calibrated for a .1 degree step)
-el_delay = 10  # Elevation movement time (calibrated for a .1 degree step)
+el_delay = 5  # Elevation movement time (calibrated for a .1 degree step)
 paused = False
 
 
@@ -235,8 +235,8 @@ def setup():
 
 
 def generate_measurement_array(el_sweep_size, el_step_size, az_sweep_size, az_step_size):
-    az_values = int(az_sweep_size/az_step_size)
-    el_values = int(el_sweep_size/el_step_size)
+    az_values = int(az_sweep_size/az_step_size)+1
+    el_values = int(el_sweep_size/el_step_size)+1
 
     zero_grid = np.zeros((el_values, az_values))
 
@@ -276,12 +276,28 @@ def move_to_start():
     return 0
 
 
+def return_to_start():
+    global az_current_angle, el_current_angle
+    # We know that the controller should be at 0 in both elevation and azimuth to start
+    # Move azimuth to start location
+    print("Moving to:")
+    print("Azimuth: 0")
+    print("Elevation: 0")
+    send_command(f'move_az_DM542T.py:{-az_current_angle}')
+    time.sleep(10)
+    send_command(f'move_el_DM542T_absolute.py:{-el_current_angle}')
+    time.sleep(SEND_DELAY)
+    az_current_angle = 0
+    el_current_angle = 0
+
+    return 0
+
+
 def sweep_2D(grid):
     global az_current_angle, el_current_angle, paused
     num_cols = grid.shape[1]
     num_rows = grid.shape[0]
 
-    # Take single measurement here to start
     for i in range(num_rows):
         print("Scanning row: ", i)
         if keyboard.is_pressed('p'):
@@ -297,17 +313,18 @@ def sweep_2D(grid):
                     print("Sweep paused. Press 'r' to resume.")
                 if paused:
                     wait_for_resume()
-                send_command(f'move_az_DM542T.py:{az_step_size}')
-                az_current_angle += az_step_size
-                print("Current azimuth: ", az_current_angle,
+
+                print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
                 time.sleep(az_delay)
-                # Take Measurement
+                # Take measurement
                 time.sleep(az_delay)
+                send_command(f'move_az_DM542T.py:{az_step_size}')
+                az_current_angle += az_step_size
 
         else:
             # Travel right to left on odd indexed roads
-            for k in range(num_cols):
+            for j in range(num_cols):
                 if keyboard.is_pressed('p'):
                     paused = True
                     print("Sweep paused. Press 'r' to resume.")
@@ -315,24 +332,21 @@ def sweep_2D(grid):
                     wait_for_resume()
                 send_command(f'move_az_DM542T.py:{-az_step_size}')
                 az_current_angle -= az_step_size
-                print("Current azimuth: ", az_current_angle,
+                print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
                 time.sleep(az_delay)
-                # Take Measurement
+                # Take measurement
                 time.sleep(az_delay)
         send_command(
             f'move_el_DM542T_absolute.py:{el_start_angle + (i+1)*el_step_size}')
         el_current_angle += el_step_size
-        print("Current azimuth: ", az_current_angle,
-              "    Current elevation: ", el_current_angle)
         time.sleep(el_delay)
-
-        # Take Measurement
 
         if keyboard.is_pressed('p'):
             paused = True
             print("Sweep paused. Press 'r' to resume.")
 
+    print("Sweep complete!")
     return 0
 
 
