@@ -116,7 +116,7 @@ def main(target):
             GPIO.output(DIR, False)
         else:
             GPIO.output(DIR, True)
-        if (abs(error) > .022):
+        if (abs(error) > .021):
             GPIO.output(PUL, True)
             time.sleep(0.001)  # Adjust speed with delay
             GPIO.output(PUL, False)

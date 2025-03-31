@@ -41,8 +41,8 @@ total_movement_el = 0.0
 current_key = None  # Track the currently pressed key
 SEND_DELAY = 0.3
 settling_time = 1  # Time allowed for settling/averaging between measurements
-az_delay = 0.6  # Azimuth movement time (calibrated for a .1 degree step)
-el_delay = 5  # Elevation movement time (calibrated for a .1 degree step)
+az_delay = .8  # Azimuth movement time (calibrated for a .1 degree step)
+el_delay = 3  # Elevation movement time (calibrated for a .1 degree step)
 paused = False
 
 
@@ -267,9 +267,9 @@ def move_to_start():
     print("Azimuth: ", az_start_angle)
     print("Elevation: ", el_start_angle)
     send_command(f'move_az_DM542T.py:{az_start_angle}')
-    time.sleep(10)
+    time.sleep(abs(az_start_angle * az_delay/.1))
     send_command(f'move_el_DM542T_absolute.py:{el_start_angle}')
-    time.sleep(SEND_DELAY)
+    time.sleep(abs(el_start_angle * el_delay/.1))
     az_current_angle = az_start_angle
     el_current_angle = el_start_angle
 
@@ -284,9 +284,9 @@ def return_to_start():
     print("Azimuth: 0")
     print("Elevation: 0")
     send_command(f'move_az_DM542T.py:{-az_current_angle}')
-    time.sleep(10)
+    time.sleep(abs(az_start_angle * az_delay/.1))
     send_command(f'move_el_DM542T_absolute.py:{-el_current_angle}')
-    time.sleep(SEND_DELAY)
+    time.sleep(abs(el_start_angle * el_delay/.1))
     az_current_angle = 0
     el_current_angle = 0
 
@@ -316,9 +316,9 @@ def sweep_2D(grid):
 
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
-                time.sleep(az_delay)
+                time.sleep(abs(az_delay * az_step_size/.1))
                 # Take measurement
-                time.sleep(az_delay)
+                time.sleep(settling_time)
                 send_command(f'move_az_DM542T.py:{az_step_size}')
                 az_current_angle += az_step_size
 
@@ -334,13 +334,14 @@ def sweep_2D(grid):
                 az_current_angle -= az_step_size
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
-                time.sleep(az_delay)
+                time.sleep(abs(az_delay * az_step_size/.1))
                 # Take measurement
-                time.sleep(az_delay)
-        send_command(
-            f'move_el_DM542T_absolute.py:{el_start_angle + (i+1)*el_step_size}')
-        el_current_angle += el_step_size
-        time.sleep(el_delay)
+                time.sleep(settling_time)
+        if i != num_rows-1:
+            send_command(
+                f'move_el_DM542T_absolute.py:{el_start_angle + (i+1)*el_step_size}')
+            el_current_angle += el_step_size
+            time.sleep(abs(el_delay * el_step_size/.1))
 
         if keyboard.is_pressed('p'):
             paused = True
