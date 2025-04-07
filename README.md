@@ -43,10 +43,14 @@ Follow these steps to run the 2D sweep:
 
 You will need to define the following parameters:
 
+In the config file:
 - **Start and End Azimuth**: The range of azimuth angles you want to sweep across.
 - **Start and End Elevation**: The range of elevation angles you want to sweep across.
 - **Step Size**: The step size for both azimuth and elevation (i.e., how much to move the device between measurements).
-- **Save Folder**: The folder where the measurement data will be saved.
+
+In the UTOL_Motion_Control_pc.py script:
+- **Save Folder**: The folder where the measurement data will be saved. This is set in the code, not the config file
+- **Timing delays**: Adjust these as necessary for measurements. Should be set to correct measured times already
 
 Use the existing config.ini file to do this on the PC and save it when inputs have been entered. The save folder is defined in the header of UTOL_Motion_Control_pc.py
 
@@ -56,5 +60,5 @@ On the pi, start the UTOL_Motion_Control_pi.py script and ensure it prints out t
 ### 3. **Run the PC Controller Code**
 On the pc, start the UTOL_Motion_Control_pc.py code. You may have to run this as admin and enter your password due to the keyboard input code. The code will run as follows:
 1. When first run, the code will enter a setup mode that allows the user to select a start location controlling the motor stage with the keyboard. When you are satisfied with this, press 'q' to quit and begin the sweep.
-2. The sweep will start by moving to the bottom left corner of the sweep and doing a serpentine approach to the top, taking measurements at each point. It also will record the current position of the azimuth and elevation in the config file in case of an interruption. At any point, the 'q' key can be pressed to pause the measurement and pressed again to start. 
+2. The sweep will start by moving to the bottom left corner of the sweep and doing a serpentine approach to the top, taking measurements at each point. It also will record the current position of the azimuth and elevation in the config file in case of an interruption. At any point, the 'p' key can be pressed to pause the measurement and the 'r' key is pressed to continue again. You may have to hold the p key for a second or two before it works depending on where it is in the measurement process.
 3. When completed with the sweep, the code will exit the sweep and save the results to the given filepath.
