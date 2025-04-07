@@ -15,6 +15,7 @@ import twister_api.fileio as fileio
 import scipy
 import os
 import datetime
+import pyvisa
 
 # Global Variables
 # Azimuth
@@ -46,7 +47,7 @@ el_delay = 3  # Elevation movement time (calibrated for a .1 degree step)
 paused = False
 
 # Measurements
-
+waveform = False
 
 # Server
 HOST = ""
@@ -60,10 +61,13 @@ save_folder = 'C:/Users/Ethan Abele/OneDrive - Oklahoma A and M System/Research/
 save_path = save_folder+save_name+'.mat'
 
 # Setup instrument
-# scope = Oscilloscope(
-#    visa_address="TCPIP0::192.168.27.10::inst0::INSTR", debug=True)
+scope = Oscilloscope(
+    visa_address="TCPIP0::192.168.27.10::inst0::INSTR", debug=True)
 # scope = Oscilloscope(visa_address="TCPIP0::10.10.10.10::inst0::INSTR",debug=True)
-
+rm = pyvisa.ResourceManager()
+Infiniium = rm.open_resource("TCPIP0::192.168.27.10::inst0::INSTR")
+Infiniium.timeout = 20000
+Infiniium.clear()
 
 # # Function to send motion requests to the Raspberry Pi server
 
@@ -109,6 +113,10 @@ def generate_config(filename="config.ini"):
         "step_size": el_step_size
     }
 
+    config["MEASUREMENT TYPE"] = {
+        "waveform": waveform
+    }
+
     # Write configuration to file
     with open(filename, "w") as configfile:
         config.write(configfile)
@@ -119,7 +127,7 @@ def generate_config(filename="config.ini"):
 
 
 def read_config(filename="config.ini"):
-    global az_current_angle, az_start_angle, az_end_angle, az_step_size, el_current_angle, el_start_angle, el_end_angle, el_step_size, HOST, PORT
+    global az_current_angle, az_start_angle, az_end_angle, az_step_size, el_current_angle, el_start_angle, el_end_angle, el_step_size, HOST, PORT, waveform
     config = configparser.ConfigParser()
     config.read(filename)
 
@@ -148,9 +156,13 @@ def read_config(filename="config.ini"):
     el_step_size = float(config.get(
         "ELEVATION CONTROL", "step_size", fallback=0))
 
+    # Measurement
+    waveform = bool(config.get(
+        "MEASUREMENT TYPE", "waveform", fallback=0))
+
 
 def setup():
-    global az_current_angle, az_start_angle, az_end_angle, az_step_size, el_current_angle, el_start_angle, el_end_angle, el_step_size, HOST, PORT, total_movement, current_key, total_movement_az, total_movement_el
+    global az_current_angle, az_start_angle, az_end_angle, az_step_size, el_current_angle, el_start_angle, el_end_angle, el_step_size, HOST, PORT, total_movement, current_key, total_movement_az, total_movement_el, waveform
     read_config()
     print("Controls:")
     print("  - Hold 'd' to move right.")
@@ -266,7 +278,7 @@ def wait_for_resume():
 # Moves stage to bottom left of measurement pattern to start control
 
 
-def take_measurement(i, j, az_pos, el_pos):
+def take_measurement(i, j, az_pos, el_pos, waveform):
     global peak_freq, peak_freq, az_angle
     time.sleep(settling_time)
 
@@ -278,6 +290,38 @@ def take_measurement(i, j, az_pos, el_pos):
     az_angle[i][j] = az_pos
     el_angle[i][j] = el_pos
     print("Saving to: ", i, ", ", j)
+
+    if waveform:
+        Infiniium.write(":DIGitize")
+        time_values, voltage_values = get_waveform(1)
+        filename = f"waveform_az{az_pos}_el{el_pos}.mat"
+        scipy.io.savemat(save_folder+filename,
+                         {'time': time_values, 'voltage': voltage_values})
+
+# Function to retrieve waveform data from the oscilloscope
+
+
+def get_waveform(channel):
+    Infiniium.write(f":WAVeform:SOURce CHANnel{channel}")
+    Infiniium.write(":WAVeform:FORMat BYTE")
+    Infiniium.write(":WAVeform:STReaming OFF")
+
+    x_increment = float(Infiniium.query(":WAVeform:XINCrement?"))
+    x_origin = float(Infiniium.query(":WAVeform:XORigin?"))
+    y_increment = float(Infiniium.query(":WAVeform:YINCrement?"))
+    y_origin = float(Infiniium.query(":WAVeform:YORigin?"))
+
+    preamble = Infiniium.query(":WAVeform:PREamble?").split(',')
+    num_points = int(preamble[2])
+
+    raw_data = Infiniium.query_binary_values(
+        ":WAVeform:DATA?", datatype='b', container=np.array)
+
+    time_values = np.linspace(
+        x_origin, x_origin + x_increment * (num_points - 1), num_points)
+    voltage_values = (raw_data * y_increment) + y_origin
+
+    return time_values, voltage_values
 
 
 def move_to_start():
@@ -315,7 +359,7 @@ def return_to_start():
 
 
 def sweep_2D(grid):
-    global az_current_angle, el_current_angle, paused
+    global az_current_angle, el_current_angle, paused, waveform
     num_cols = grid.shape[1]
     num_rows = grid.shape[0]
 
@@ -338,7 +382,8 @@ def sweep_2D(grid):
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
                 time.sleep(abs(az_delay * az_step_size/.1))
-                take_measurement(i, j, az_current_angle, el_current_angle)
+                take_measurement(i, j, az_current_angle,
+                                 el_current_angle, waveform)
                 time.sleep(settling_time)
                 send_command(f'move_az_DM542T.py:{az_step_size}')
                 az_current_angle += az_step_size
@@ -356,7 +401,8 @@ def sweep_2D(grid):
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
                 time.sleep(abs(az_delay * az_step_size/.1))
-                take_measurement(i, j, az_current_angle, el_current_angle)
+                take_measurement(i, j, az_current_angle,
+                                 el_current_angle, waveform)
                 time.sleep(settling_time)
         if i != num_rows-1:
             send_command(
