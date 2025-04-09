@@ -352,17 +352,21 @@ def sweep_2D(grid):
 
 
 # Code to be run
-setup()
-read_config()
 
-measurement = generate_measurement_array(el_end_angle-el_start_angle,
-                                         el_step_size, az_end_angle-az_start_angle, az_step_size)
+generate_config()
 
-print(measurement)
-send_command(f'move_el_DM542T.py:{0}')
-move_to_start()
+# setup()
+# read_config()
 
 
-input("Press any key to continue with sweep")
+# measurement = generate_measurement_array(el_end_angle-el_start_angle,
+#                                          el_step_size, az_end_angle-az_start_angle, az_step_size)
 
-sweep_2D(measurement)
+# print(measurement)
+# send_command(f'move_el_DM542T.py:{0}')
+# move_to_start()
+
+
+# input("Press any key to continue with sweep")
+
+# sweep_2D(measurement)

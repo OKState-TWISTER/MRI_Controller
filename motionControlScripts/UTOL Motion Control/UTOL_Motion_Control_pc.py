@@ -156,9 +156,9 @@ def read_config(filename="config.ini"):
     el_step_size = float(config.get(
         "ELEVATION CONTROL", "step_size", fallback=0))
 
-    # Measurement
-    waveform = bool(config.get(
-        "MEASUREMENT TYPE", "waveform", fallback=0))
+    # # Measurement
+    # waveform = bool(config.get(
+    #     "MEASUREMENT TYPE", "waveform", fallback=0))
 
 
 def setup():
@@ -281,6 +281,7 @@ def wait_for_resume():
 def take_measurement(i, j, az_pos, el_pos, waveform):
     global peak_freq, peak_freq, az_angle
     time.sleep(settling_time)
+    waveform = True  # Take this out
 
     # Get the FFT Peak
     peakPWR_temp = scope.get_fft_peak(2)
