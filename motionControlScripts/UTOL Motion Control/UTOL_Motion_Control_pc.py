@@ -156,9 +156,9 @@ def read_config(filename="config.ini"):
     el_step_size = float(config.get(
         "ELEVATION CONTROL", "step_size", fallback=0))
 
-    # # Measurement
-    # waveform = bool(config.get(
-    #     "MEASUREMENT TYPE", "waveform", fallback=0))
+    # Measurement
+    waveform = bool(config.get(
+        "MEASUREMENT TYPE", "waveform", fallback=False))
 
 
 def setup():
@@ -281,23 +281,25 @@ def wait_for_resume():
 def take_measurement(i, j, az_pos, el_pos, waveform):
     global peak_freq, peak_freq, az_angle
     time.sleep(settling_time)
-    waveform = True  # Take this out
 
-    # Get the FFT Peak
-    peakPWR_temp = scope.get_fft_peak(2)
-    peak_freq_temp = scope.do_query(f":FUNCtion2:FFT:PEAK:FREQ?")
-    peak_val[i][j] = peakPWR_temp
-    peak_freq[i][j] = peak_freq_temp.strip('""')
-    az_angle[i][j] = az_pos
-    el_angle[i][j] = el_pos
-    print("Saving to: ", i, ", ", j)
+    az_pos = round(az_pos, 2)
+    el_pos = round(el_pos, 2)
 
     if waveform:
         Infiniium.write(":DIGitize")
-        time_values, voltage_values = get_waveform(1)
+        time_values, voltage_values, y_origin, x_increment = get_waveform(1)
         filename = f"waveform_az{az_pos}_el{el_pos}.mat"
         scipy.io.savemat(save_folder+filename,
-                         {'time': time_values, 'voltage': voltage_values})
+                         {'time': time_values, 'voltage': voltage_values, 'y_org': y_origin, 'x_inc': x_increment})
+    else:
+        # Get the FFT Peak
+        peakPWR_temp = scope.get_fft_peak(2)
+        peak_freq_temp = scope.do_query(f":FUNCtion2:FFT:PEAK:FREQ?")
+        peak_val[i][j] = peakPWR_temp
+        peak_freq[i][j] = peak_freq_temp.strip('""')
+        az_angle[i][j] = az_pos
+        el_angle[i][j] = el_pos
+        # print("Saving to: ", i, ", ", j)
 
 # Function to retrieve waveform data from the oscilloscope
 
@@ -322,7 +324,7 @@ def get_waveform(channel):
         x_origin, x_origin + x_increment * (num_points - 1), num_points)
     voltage_values = (raw_data * y_increment) + y_origin
 
-    return time_values, voltage_values
+    return time_values, voltage_values, y_origin, x_increment
 
 
 def move_to_start():
