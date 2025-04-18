@@ -55,14 +55,15 @@ PORT = 0
 
 # Save path
 save_name = str(sys.argv[1])
-# save_folder = 'C:/Users/Ethan Abele/OneDrive - Oklahoma A and M System/THz Jitter/measurements_29April2024/AzElSweep/'
-save_folder = 'C:/Users/Ethan Abele/OneDrive - Oklahoma A and M System/Research/THz Jitter/python_scripts/tests_22March2025/rxGainPattern/'
+save_folder = 'C:/Users/UTOL/Desktop'
+# save_folder = 'C:/Users/Ethan Abele/OneDrive - Oklahoma A and M System/Research/THz Jitter/python_scripts/tests_22March2025/rxGainPattern/'
 # save_name = 'Az_sweep_El_000'
 save_path = save_folder+save_name+'.mat'
 
 # Setup instrument
 scope = Oscilloscope(
     visa_address="TCPIP0::192.168.27.10::inst0::INSTR", debug=True)
+
 # scope = Oscilloscope(visa_address="TCPIP0::10.10.10.10::inst0::INSTR",debug=True)
 rm = pyvisa.ResourceManager()
 Infiniium = rm.open_resource("TCPIP0::192.168.27.10::inst0::INSTR")
@@ -157,8 +158,8 @@ def read_config(filename="config.ini"):
         "ELEVATION CONTROL", "step_size", fallback=0))
 
     # Measurement
-    waveform = bool(config.get(
-        "MEASUREMENT TYPE", "waveform", fallback=False))
+    waveform = config.getboolean(
+        "MEASUREMENT TYPE", "waveform", fallback=False)
 
 
 def setup():
@@ -317,8 +318,10 @@ def get_waveform(channel):
     preamble = Infiniium.query(":WAVeform:PREamble?").split(',')
     num_points = int(preamble[2])
 
-    raw_data = Infiniium.query_binary_values(
-        ":WAVeform:DATA?", datatype='b', container=np.array)
+    # raw_data = Infiniium.query_binary_values(
+    #     ":WAVeform:DATA?", datatype='b', container=np.array)
+
+    raw_data = scope.get_waveform_words([1])
 
     time_values = np.linspace(
         x_origin, x_origin + x_increment * (num_points - 1), num_points)
@@ -351,9 +354,9 @@ def return_to_start():
     print("Moving to:")
     print("Azimuth: 0")
     print("Elevation: 0")
-    send_command(f'move_az_DM542T.py:{-az_current_angle}')
+    send_command(f'move_az_DM542T.py:{0}')
     time.sleep(abs(az_start_angle * az_delay/.1))
-    send_command(f'move_el_DM542T_absolute.py:{-el_current_angle}')
+    send_command(f'move_el_DM542T_absolute.py:{0}')
     time.sleep(abs(el_start_angle * el_delay/.1))
     az_current_angle = 0
     el_current_angle = 0
@@ -431,7 +434,10 @@ grid, peak_val, peak_freq, az_angle, el_angle = generate_measurement_array(el_en
 send_command(f'move_el_DM542T.py:{0}')
 move_to_start()
 
-
+if waveform:
+    print("The following experiment will capture: WAVEFORMS")
+else:
+    print("The following experiment will capture: PEAKS")
 input("Press any key to continue with sweep")
 
 sweep_2D(grid)
@@ -441,12 +447,13 @@ az_angle[1::2] = az_angle[1::2, ::-1]
 peak_freq[1::2] = peak_freq[1::2, ::-1]
 peak_val[1::2] = peak_val[1::2, ::-1]
 
-mdict = {
-    'peak_val': peak_val,
-    'peak_freq': peak_freq,
-    'az_angle': az_angle,
-    'el_angle': el_angle
-}
-scipy.io.savemat(save_path, mdict)
+if not waveform:
+    mdict = {
+        'peak_val': peak_val,
+        'peak_freq': peak_freq,
+        'az_angle': az_angle,
+        'el_angle': el_angle
+    }
+    scipy.io.savemat(save_path, mdict)
 
 return_to_start()

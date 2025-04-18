@@ -116,7 +116,7 @@ def generate_config(filename="config.ini"):
 
 
 def read_config(filename="config.ini"):
-    global az_current_angle, az_start_angle, az_end_angle, az_step_size, el_current_angle, el_start_angle, el_end_angle, el_step_size, HOST, PORT
+    global az_current_angle, az_start_angle, az_end_angle, az_step_size, el_current_angle, el_start_angle, el_end_angle, el_step_size, HOST, PORT, waveform
     config = configparser.ConfigParser()
     config.read(filename)
 
@@ -144,6 +144,10 @@ def read_config(filename="config.ini"):
                          "end_point_degrees", fallback=0))
     el_step_size = float(config.get(
         "ELEVATION CONTROL", "step_size", fallback=0))
+
+    # Measurement
+    waveform = config.getboolean(
+        "MEASUREMENT TYPE", "waveform", fallback=False)
 
 
 def setup():
@@ -353,10 +357,10 @@ def sweep_2D(grid):
 
 # Code to be run
 
-generate_config()
-
-# setup()
-# read_config()
+# generate_config()
+setup()
+read_config()
+print("waveform", waveform)
 
 
 # measurement = generate_measurement_array(el_end_angle-el_start_angle,
