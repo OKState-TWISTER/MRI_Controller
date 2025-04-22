@@ -3,6 +3,10 @@ import time
 import sys
 
 deg = float(sys.argv[1])
+verbose = False
+if len(sys.argv) == 3:
+	if sys.argv[2] == "--verbose":
+		verbose == True
 
 # Set pin numbers under Broadcom Soc Channel numbering system
 GPIO.setmode(GPIO.BCM)
@@ -37,7 +41,8 @@ else:
 
 # Move desired number of steps
 for i in range(abs(steps)):
-	print(i)
+	if verbose:
+		print(i)
 	GPIO.output(PUL,True)
 	time.sleep(0.001)
 	GPIO.output(PUL,False)
