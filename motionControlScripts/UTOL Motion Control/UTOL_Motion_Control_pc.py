@@ -365,7 +365,8 @@ def return_to_start():
     print("Moving to:")
     print("Azimuth: 0")
     print("Elevation: 0")
-    az_succ = send_command(f'move_az_DM542T.py:{0}')
+    # az_succ = send_command(f'move_az_DM542T.py:{0}') # This script doesn't use absolute coordinates
+    az_succ = send_command(f'move_az_DM542T.py:{-az_current_angle}') # Changed to use relative offset.
     # time.sleep(abs(az_start_angle * az_delay/.1)) Send command now should be blocking.
     el_succ = send_command(f'move_el_DM542T_absolute.py:{0}')
     # time.sleep(abs(el_start_angle * el_delay/.1))
