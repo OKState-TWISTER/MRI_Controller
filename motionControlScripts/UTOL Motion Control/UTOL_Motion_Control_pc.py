@@ -397,11 +397,15 @@ def sweep_2D(grid):
 
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
-                time.sleep(abs(az_delay * az_step_size/.1))
+                # time.sleep(abs(az_delay * az_step_size/.1))
+                move_succ = send_command(f'move_az_DM542T.py:{az_step_size}')
+                if not move_succ:
+                    print("*"*30)
+                    print(f"ERROR! MOVEMENT FAILED!")
+                    print(f"\tAzimuth {-az_step_size}")
                 take_measurement(i, j, az_current_angle,
                                  el_current_angle, waveform)
                 time.sleep(settling_time)
-                send_command(f'move_az_DM542T.py:{az_step_size}')
                 az_current_angle += az_step_size
 
         else:
@@ -412,11 +416,11 @@ def sweep_2D(grid):
                     print("Sweep paused. Press 'r' to resume.")
                 if paused:
                     wait_for_resume()
-                send_command(f'move_az_DM542T.py:{-az_step_size}')
+                move_succ = send_command(f'move_az_DM542T.py:{-az_step_size}')
                 az_current_angle -= az_step_size
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
-                time.sleep(abs(az_delay * az_step_size/.1))
+                # time.sleep(abs(az_delay * az_step_size/.1))
                 take_measurement(i, j, az_current_angle,
                                  el_current_angle, waveform)
                 time.sleep(settling_time)
