@@ -149,4 +149,5 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     print(f"Moving El {arguments} deg")
                     # move_el(float(arguments))
                 else:
-                    execute_script(script_name, arguments)
+                    success = execute_script(script_name, arguments)
+                    conn.send(("cmd_succ" if success else "cmd_fail").encode())

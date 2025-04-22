@@ -77,7 +77,19 @@ def send_command(command):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
         s.sendall(command.encode())
+        res = s.recv(1024) # get a response after sending the command. This will be blocking...
+        if not res: # If there was no response. Should only occur when the connection is closed prematurely.
+            return False
 
+        res_str = res.decode()
+        if res_str == "cmd_succ":
+            return True
+        elif res_str == "cmd_fail":
+            return False
+        else:
+            print(f"ERROR: Unknown or Unexpected response!")
+            print(f"\tCommand: {command}")
+            print(f"\tResponse: {res_str}")
 
 # Updates config file
 
@@ -337,15 +349,14 @@ def move_to_start():
     print("Moving to:")
     print("Azimuth: ", az_start_angle)
     print("Elevation: ", el_start_angle)
-    send_command(f'move_az_DM542T.py:{az_start_angle}')
-    time.sleep(abs(az_start_angle * az_delay/.1))
-    send_command(f'move_el_DM542T_absolute.py:{el_start_angle}')
-    time.sleep(abs(el_start_angle * el_delay/.1))
+    az_succ = send_command(f'move_az_DM542T.py:{az_start_angle}')
+    # time.sleep(abs(az_start_angle * az_delay/.1))
+    el_succ = send_command(f'move_el_DM542T_absolute.py:{el_start_angle}')
+    # time.sleep(abs(el_start_angle * el_delay/.1))
     az_current_angle = az_start_angle
     el_current_angle = el_start_angle
 
-    return 0
-
+    return (az_succ and el_succ) # Return's success of homing event
 
 def return_to_start():
     global az_current_angle, el_current_angle
@@ -354,15 +365,14 @@ def return_to_start():
     print("Moving to:")
     print("Azimuth: 0")
     print("Elevation: 0")
-    send_command(f'move_az_DM542T.py:{0}')
-    time.sleep(abs(az_start_angle * az_delay/.1))
-    send_command(f'move_el_DM542T_absolute.py:{0}')
-    time.sleep(abs(el_start_angle * el_delay/.1))
+    az_succ = send_command(f'move_az_DM542T.py:{0}')
+    # time.sleep(abs(az_start_angle * az_delay/.1)) Send command now should be blocking.
+    el_succ = send_command(f'move_el_DM542T_absolute.py:{0}')
+    # time.sleep(abs(el_start_angle * el_delay/.1))
     az_current_angle = 0
     el_current_angle = 0
 
-    return 0
-
+    return (az_succ and el_succ) # Return's success of homing event
 
 def sweep_2D(grid):
     global az_current_angle, el_current_angle, paused, waveform
