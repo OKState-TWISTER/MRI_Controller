@@ -3,7 +3,7 @@ import random
 from PySide6 import QtCore, QtWidgets, QtGui, QtNetwork
 from PySide6.QtCore import QThread
 # from matplotlib import pyplot as plt
-from sweepControl import sweepControl
+from sweepControlv2 import sweepControl
 
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import \
@@ -16,7 +16,7 @@ import scipy
 
 class MainWindow(QtWidgets.QWidget):
     startTest = QtCore.Signal(float, float, float, float, float, float, str, str)
-    responseRecv = QtCore.Signal(bool, float)
+    responseRecv = QtCore.Signal(bool, str, float)
     
     def __init__(self):
         super().__init__()
@@ -122,6 +122,19 @@ class MainWindow(QtWidgets.QWidget):
         self.manual_antSelect_layout.addWidget(self.manual_antSelect_tx)
         self.manual_antSelect_layout.addWidget(self.manual_antSelect_rx)
 
+        self.info_font = QtGui.QFont()
+        self.info_font.setPointSize(24)
+        self.info_group_layout = QtWidgets.QVBoxLayout(self.info_group)
+        self.info_az_label = QtWidgets.QLabel("Azimuth: -0.0000")
+        self.info_az_label.setFont(self.info_font)
+        self.info_group_layout.addWidget(self.info_az_label)
+        self.info_el_label = QtWidgets.QLabel("Elevation: -0.0000")
+        self.info_el_label.setFont(self.info_font)
+        self.info_group_layout.addWidget(self.info_el_label)
+        self.info_idx_label = QtWidgets.QLabel("Index: -0.0000")
+        self.info_idx_label.setFont(self.info_font)
+        self.info_group_layout.addWidget(self.info_idx_label)
+
         # self.tx_ant = QtNetwork.QAbstractSocket(QtNetwork.QAbstractSocket.SocketType.UnknownSocketType, self)
         self.tx_ant = QtNetwork.QTcpSocket()
         self.tx_ant.connectToHost("192.168.27.194", 12345)
@@ -203,11 +216,15 @@ class MainWindow(QtWidgets.QWidget):
         self.sweepController = sweepControl(el_start, el_stop, el_step, az_start, az_stop, az_step)
         self.sweepController.send_command.connect(self.send_cmd)
         self.responseRecv.connect(self.sweepController.on_res_received)
+        self.sweepController.new_location.connect(self.on_new_location)
+        self.sweepController.new_az.connect(self.on_new_az)
+        self.sweepController.new_el.connect(self.on_new_el)
+        self.sweepController.point_finished.connect(self.on_point_finished)
         self.measType = measType
         self.measAnt = antenna
-        self.sweepController.newPoint.connect(self.onNewData)
-        self.sweepController.finished.connect(self.sweepController.deleteLater)
-        self.ant_sock.readyRead
+        self.sweepController.measurement_finished.connect(self.onNewData)
+        # self.sweepController.finished.connect(self.sweepController.deleteLater)
+        self.sweepController.sweepFinished.connect(self.on_sweep_finished)
         print(f"Running Thread")
         # self.sweep_thread.start()
         self.sweepController.start()
@@ -224,6 +241,19 @@ class MainWindow(QtWidgets.QWidget):
         print(f"Connection to server failed!\n\t{err}")
 
     @QtCore.Slot()
+    def on_new_location(self, az, el):
+        self.info_az_label.setText(f"Azimuth: {az:.04f}")
+        self.info_el_label.setText(f"Elevation: {el:.04f}")
+    @QtCore.Slot()
+    def on_new_az(self, az):
+        self.info_az_label.setText(f"Azimuth: {az:.04f}")
+    @QtCore.Slot()
+    def on_new_el(self, el):
+        self.info_el_label.setText(f"Elevation: {el:.04f}")
+    def on_point_finished(self, idx):
+        self.info_idx_label.setText(f"Point Index: {idx}")
+
+    @QtCore.Slot()
     def start_btn_clicked(self):
         # print(f"Start Clicked!")
 
@@ -234,6 +264,8 @@ class MainWindow(QtWidgets.QWidget):
             self.ant_sock = self.rx_ant
         else:
             self.ant_sock = self.tx_ant
+        if self.ant_sock.bytesAvailable():
+            self.ant_sock.readAll()
         az_start = float(self.controls_az_start_text.text())
         az_stop = float(self.controls_az_stop_text.text())
         az_step = float(self.controls_az_step_text.text())
@@ -254,7 +286,6 @@ class MainWindow(QtWidgets.QWidget):
         # print(f"\t\tStop: {el_stop}")
         # print(f"\t\tStep: {el_step}")
 
-        # self.startTest.emit(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping)
         self.startMeasurement(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping)
     
     @QtCore.Slot()
@@ -262,10 +293,14 @@ class MainWindow(QtWidgets.QWidget):
         # print(f"Up Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        print(f"{ant} up {step} degrees")
+        # print(f"{ant} up {step} degrees")
         if ant == "transmitter":
+            self.ant_sock = self.tx_ant
+            self.ant_sock.readyRead.connect(self.on_tcp_data)
             self.tx_ant.write(f'move_el_DM542T.py:{step}'.encode())
         else:
+            self.ant_sock = self.rx_ant
+            self.ant_sock.readyRead.connect(self.on_tcp_data)
             self.rx_ant.write(f'move_el_DM542T.py:{step}'.encode())
     
     @QtCore.Slot()
@@ -273,7 +308,7 @@ class MainWindow(QtWidgets.QWidget):
         # print(f"Down Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        print(f"{ant} down {step} degrees")
+        # print(f"{ant} down {step} degrees")
         if ant == "transmitter":
             self.tx_ant.write(f'move_el_DM542T.py:{-1 * step}'.encode())
         else:
@@ -307,17 +342,14 @@ class MainWindow(QtWidgets.QWidget):
             self.surf_plot = self.plot_ax.plot_surface(self.sweepController.az_angle, self.sweepController.el_angle, self.sweepController.peak_val, cmap = cm.coolwarm)
         else:
 
-            az_angle = np.copy(self.sweepController.az_angle)
-            el_angle = np.copy(self.sweepController.el_angle)
-            peak_val = self.sweepController.peak_val
-            az_angle[1::2] = az_angle[1::2, ::-1]
-            peak_val[1::2] = peak_val[1::2, ::-1]
+            az_angle = self.sweepController.grid.get_az_angle_grid()
+            el_angle = self.sweepController.grid.get_el_angle_grid()
+            peak_val = self.sweepController.grid.get_peak_val_grid()
+            # print(f"PLOT: AZ_ANGLE_GRID: {az_angle}")
 
             # self.plot_ax.cla()
             self.surf_plot.remove()
             self.surf_plot = self.plot_ax.plot_surface(az_angle, el_angle, peak_val, cmap = cm.coolwarm)
-            # self.plot_ax.set_xlabel("Azimuth")
-            # self.plot_ax.set_ylabel("Elevation")
             self.plot_static.draw()
             # self.surf_plot.set_data(self.sweepController.az_angle, self.sweepController.el_angle, self.sweepController.peak_val)
 
@@ -327,18 +359,21 @@ class MainWindow(QtWidgets.QWidget):
             print(f"ERROR: No sweep data to save. You're looking at the demo!")
             return
         print(f"Saving plot")
-        fd = QtWidgets.QFileDialog.getSaveFileName(self,filter=".mat")
+        fd = QtWidgets.QFileDialog.getSaveFileName(self,filter="Matlab Files (*.mat)")
 
-        print(f"File Destination: {fd[0]}")
+        print(f"File Destination: {fd}")
 
-        mdict = {
-            'peak_val': self.sweepController.peak_val,
-            'peak_freq': self.sweepController.peak_freq,
-            'az_angle': self.sweepController.az_angle,
-            'el_angle': self.sweepController.el_angle
-        }
+        if fd[0] != "":
 
-        scipy.io.savemat(f"{fd[0]}", mdict)
+            mdict = {
+                'peak_val': self.sweepController.grid.get_peak_val_grid(),
+                'peak_freq': self.sweepController.grid.get_peak_freq_grid(),
+                'az_angle': self.sweepController.grid.get_az_angle_grid(),
+                'el_angle': self.sweepController.grid.get_el_angle_grid(),
+                'point_idx': self.sweepController.grid.get_idx_grid()
+            }
+
+            scipy.io.savemat(f"{fd[0]}", mdict)
 
     @QtCore.Slot(float, float)
     def update_loc(az, el):
@@ -348,6 +383,9 @@ class MainWindow(QtWidgets.QWidget):
     def send_cmd(self, cmd):
         # if self.ant_sock.bytesAvailable() > 0:
         #     _ = self.ant_sock.readAll()
+        # print(f"Sending Command {cmd}")
+        if self.ant_sock.bytesAvailable:
+            self.ant_sock.readAll()
         self.ant_sock.write(cmd.encode())
         self.ant_sock.flush()
     
@@ -359,17 +397,20 @@ class MainWindow(QtWidgets.QWidget):
 
         res_str = res.data().decode()
         # print(f"res_str: {res_str}")
-           
-        cmd_succ = res_str.split("_")[1] == "succ"
-        if cmd_succ and res_str.find("el") > 0:
-            # return True, float(res_str.split(":")[1])
-            print(f"{res_str.split(':')[1]} -> {float(res_str.split(':')[1])}")
-            self.responseRecv.emit(True, float(res_str.split(":")[1]))
-        else:
-            self.responseRecv.emit(cmd_succ, None)
-            # return cmd_succ, None
-    
         
+        cmd_arg_split = res_str.split(":")
+        cmd_succ = cmd_arg_split[0].split("_")[1] == "succ"
+        cmd_plane = cmd_arg_split[1]
+        cmd_angle = cmd_arg_split[2]
+        if cmd_succ:
+            self.responseRecv.emit(cmd_succ, cmd_plane, float(cmd_angle))
+        else:
+            self.responseRecv.emit(cmd_succ, None, None)
+
+    @QtCore.Slot()
+    def on_sweep_finished(self):
+        print(f"SAVE_PLOT IN ON_SWEEP_FINISHED")
+        self.save_plot()
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
