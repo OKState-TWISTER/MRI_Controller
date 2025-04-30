@@ -55,7 +55,7 @@ PORT = 0
 
 # Save path
 save_name = str(sys.argv[1])
-save_folder = 'C:/Users/UTOL/Desktop'
+save_folder = 'C:/Users/UTOL/Desktop/'
 # save_folder = 'C:/Users/Ethan Abele/OneDrive - Oklahoma A and M System/Research/THz Jitter/python_scripts/tests_22March2025/rxGainPattern/'
 # save_name = 'Az_sweep_El_000'
 save_path = save_folder+save_name+'.mat'
@@ -82,14 +82,20 @@ def send_command(command):
             return False
 
         res_str = res.decode()
-        if res_str == "cmd_succ":
-            return True
-        elif res_str == "cmd_fail":
-            return False
+        # if res_str == "cmd_succ":
+        #     return True
+        # elif res_str == "cmd_fail":
+        #     return False
+        # else:
+        #     print(f"ERROR: Unknown or Unexpected response!")
+        #     print(f"\tCommand: {command}")
+        #     print(f"\tResponse: {res_str}")
+        
+        cmd_succ = res_str.split("_")[1] == "succ"
+        if cmd_succ and res_str.find("el") > 0:
+            return True, float(res_str.split(":")[1])
         else:
-            print(f"ERROR: Unknown or Unexpected response!")
-            print(f"\tCommand: {command}")
-            print(f"\tResponse: {res_str}")
+            return cmd_succ, None
 
 # Updates config file
 
@@ -291,7 +297,7 @@ def wait_for_resume():
 # Moves stage to bottom left of measurement pattern to start control
 
 
-def take_measurement(i, j, az_pos, el_pos, waveform):
+def take_measurement(i, j, az_pos, el_pos, waveform, callback=None):
     global peak_freq, peak_freq, az_angle
     time.sleep(settling_time)
 
@@ -312,6 +318,8 @@ def take_measurement(i, j, az_pos, el_pos, waveform):
         peak_freq[i][j] = peak_freq_temp.strip('""')
         az_angle[i][j] = az_pos
         el_angle[i][j] = el_pos
+        if callback is not None:
+            callback(az_pos, el_pos, peak_freq[i][j], peakPWR_temp)
         # print("Saving to: ", i, ", ", j)
 
 # Function to retrieve waveform data from the oscilloscope
@@ -375,7 +383,7 @@ def return_to_start():
 
     return (az_succ and el_succ) # Return's success of homing event
 
-def sweep_2D(grid):
+def sweep_2D(grid, callback=None):
     global az_current_angle, el_current_angle, paused, waveform
     num_cols = grid.shape[1]
     num_rows = grid.shape[0]
@@ -399,15 +407,17 @@ def sweep_2D(grid):
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
                 # time.sleep(abs(az_delay * az_step_size/.1))
-                move_succ = send_command(f'move_az_DM542T.py:{az_step_size}')
+                take_measurement(i, j, az_current_angle,
+                                 el_current_angle, waveform, callback=callback)
+                
+                # time.sleep(settling_time)
+                if (j != num_cols - 1): # If we aren't in the last position
+                    move_succ = send_command(f'move_az_DM542T.py:{az_step_size}')
+                    az_current_angle += az_step_size
                 if not move_succ:
                     print("*"*30)
                     print(f"ERROR! MOVEMENT FAILED!")
-                    print(f"\tAzimuth {-az_step_size}")
-                take_measurement(i, j, az_current_angle,
-                                 el_current_angle, waveform)
-                time.sleep(settling_time)
-                az_current_angle += az_step_size
+                    print(f"\tAzimuth {az_step_size}")
 
         else:
             # Travel right to left on odd indexed roads
@@ -417,19 +427,28 @@ def sweep_2D(grid):
                     print("Sweep paused. Press 'r' to resume.")
                 if paused:
                     wait_for_resume()
-                move_succ = send_command(f'move_az_DM542T.py:{-az_step_size}')
-                az_current_angle -= az_step_size
                 print("Current azimuth: ", round(az_current_angle, 2),
                       "    Current elevation: ", el_current_angle)
                 # time.sleep(abs(az_delay * az_step_size/.1))
                 take_measurement(i, j, az_current_angle,
-                                 el_current_angle, waveform)
-                time.sleep(settling_time)
+                                 el_current_angle, waveform, callback=callback)
+                if (j != num_cols - 1): # If we aren't in the last position
+                    move_succ = send_command(f'move_az_DM542T.py:{-az_step_size}')
+                    az_current_angle -= az_step_size
+                if not move_succ:
+                    print("*"*30)
+                    print(f"ERROR! MOVEMENT FAILED!")
+                    print(f"\tAzimuth {-az_step_size}")
+                # else:
+                # time.sleep(settling_time)
         if i != num_rows-1:
-            send_command(
+            el_succ, change = send_command(
                 f'move_el_DM542T_absolute.py:{el_start_angle + (i+1)*el_step_size}')
-            el_current_angle += el_step_size
-            time.sleep(abs(el_delay * el_step_size/.1))
+            if el_succ:
+                el_current_angle += change
+            else:
+                print(f"ERROR: NO CHANGE REPORTED!!!")
+            # time.sleep(abs(el_delay * el_step_size/.1))
 
         if keyboard.is_pressed('p'):
             paused = True
@@ -438,37 +457,37 @@ def sweep_2D(grid):
     print("Sweep complete!")
     return 0
 
+if __name__ == "__main__":
+    # Code to be run
+    setup()
+    read_config()
 
-# Code to be run
-setup()
-read_config()
+    grid, peak_val, peak_freq, az_angle, el_angle = generate_measurement_array(el_end_angle-el_start_angle,
+                                                                            el_step_size, az_end_angle-az_start_angle, az_step_size)
 
-grid, peak_val, peak_freq, az_angle, el_angle = generate_measurement_array(el_end_angle-el_start_angle,
-                                                                           el_step_size, az_end_angle-az_start_angle, az_step_size)
+    send_command(f'move_el_DM542T.py:{0}')
+    move_to_start()
 
-send_command(f'move_el_DM542T.py:{0}')
-move_to_start()
+    if waveform:
+        print("The following experiment will capture: WAVEFORMS")
+    else:
+        print("The following experiment will capture: PEAKS")
+    input("Press any key to continue with sweep")
 
-if waveform:
-    print("The following experiment will capture: WAVEFORMS")
-else:
-    print("The following experiment will capture: PEAKS")
-input("Press any key to continue with sweep")
+    sweep_2D(grid)
 
-sweep_2D(grid)
+    # Flip every other row of the matrix to fix serpentine traversal problems
+    az_angle[1::2] = az_angle[1::2, ::-1]
+    peak_freq[1::2] = peak_freq[1::2, ::-1]
+    peak_val[1::2] = peak_val[1::2, ::-1]
 
-# Flip every other row of the matrix to fix serpentine traversal problems
-az_angle[1::2] = az_angle[1::2, ::-1]
-peak_freq[1::2] = peak_freq[1::2, ::-1]
-peak_val[1::2] = peak_val[1::2, ::-1]
+    if not waveform:
+        mdict = {
+            'peak_val': peak_val,
+            'peak_freq': peak_freq,
+            'az_angle': az_angle,
+            'el_angle': el_angle
+        }
+        scipy.io.savemat(save_path, mdict)
 
-if not waveform:
-    mdict = {
-        'peak_val': peak_val,
-        'peak_freq': peak_freq,
-        'az_angle': az_angle,
-        'el_angle': el_angle
-    }
-    scipy.io.savemat(save_path, mdict)
-
-return_to_start()
+    return_to_start()

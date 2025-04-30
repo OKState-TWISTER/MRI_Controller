@@ -115,8 +115,10 @@ def execute_script(script_name, arguments):
     try:
         subprocess.run(["python", script_name] + arguments.split())
         print(f'Script "{script_name}" executed with arguments:', arguments)
+        return True
     except FileNotFoundError:
         print(f'Script "{script_name}" not found.')
+        return False
 
 
 # Listen for commands from the PC on network
