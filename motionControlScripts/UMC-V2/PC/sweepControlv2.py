@@ -25,7 +25,7 @@ class sweepControl(QtCore.QThread):
     new_az = QtCore.Signal(float)
     new_el = QtCore.Signal(float)
 
-    def __init__(self, el_start_angle, el_end_angle, el_step_size, az_start_angle, az_end_angle, az_step_size, waveform=False, settling_time=0.2):
+    def __init__(self, el_start_angle, el_end_angle, el_step_size, az_start_angle, az_end_angle, az_step_size, waveform=False, settling_time=0.2, point_order="serpentine"):
         super().__init__()
         print(f"Initializing sweep")
         self.res_recv = False
@@ -39,6 +39,7 @@ class sweepControl(QtCore.QThread):
         self.isFinished = False
 
         self.waveform = waveform
+        self.point_order = point_order
 
         self.az_start_angle = az_start_angle
         self.az_end_angle = az_end_angle
@@ -215,7 +216,11 @@ class sweepControl(QtCore.QThread):
                 print(f"Paused: {self.paused}")
             elif self.target_point is None and self.current_point is None: # If no target and no current point, then we haven't started the test yet
                 print(f"Setting first point")
-                self.move_to_point(self.grid.get_point_by_travel_order(0))
+                if self.point_order == "serpentine":
+                    self.move_to_point(self.grid.get_point_by_travel_order(0))
+                elif self.point_order == "grid":
+                    self.move_to_point(self.grid.get_point_by_grid_order(0))
+
             elif self.target_point is not None: # If there is a target point and we somehow made it here...
                 print(f"Target Point")
                 if len(self.move_queue) == 0: # If no movement was queued for this point
@@ -240,7 +245,10 @@ class sweepControl(QtCore.QThread):
                     self.active = False
                 else: # Otherwise, it is in our range
                     # print(f"*"*20)
-                    self.move_to_point(self.grid.get_point_by_travel_order(self.point_index))
+                    if self.point_order == "serpentine":
+                        self.move_to_point(self.grid.get_point_by_travel_order(self.point_index))
+                    elif self.point_order == "grid":
+                        self.move_to_point(self.grid.get_point_by_grid_order(self.point_index))
         # else: # Not active
         #     self.finished.emit()
     

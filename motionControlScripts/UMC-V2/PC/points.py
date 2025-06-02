@@ -48,6 +48,12 @@ class Grid:
         temp_grid = temp_grid.reshape((1, np.size(temp_grid)))
         return temp_grid[0]
     
+    def get_grid_order(self):
+        temp_grid = np.copy(self.grid)
+
+        temp_grid = temp_grid.reshape((1, np.size(temp_grid)))
+        return temp_grid[0]
+    
     def _get_az_angle(self, val):
         return val.az
 
@@ -90,6 +96,9 @@ class Grid:
     
     def get_point_by_travel_order(self, index):
         return self.get_serpentine()[index]
+    
+    def get_point_by_grid_order(self, index):
+        return self.get_grid_order()[index]
 
 
 if __name__ == "__main__":

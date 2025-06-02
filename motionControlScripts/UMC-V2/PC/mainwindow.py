@@ -92,12 +92,23 @@ class MainWindow(QtWidgets.QWidget):
         self.controls_el_stop_label = QtWidgets.QLabel("Stop")
         self.controls_el_stop_layout.addWidget(self.controls_el_stop_label)
         self.controls_el_stop_text = QtWidgets.QLineEdit(text="1.0")
+        # self.controls_el_stop_text.setSizeHint()
         self.controls_el_stop_layout.addWidget(self.controls_el_stop_text)
         self.controls_el_step_layout = QtWidgets.QHBoxLayout(self.controls_el_step_frame)
         self.controls_el_step_label = QtWidgets.QLabel("Step")
         self.controls_el_step_layout.addWidget(self.controls_el_step_label)
         self.controls_el_step_text = QtWidgets.QLineEdit(text="1.0")
         self.controls_el_step_layout.addWidget(self.controls_el_step_text)
+
+        self.controls_sweepType_group = QtWidgets.QGroupBox("Sweep Type")
+        self.controls_layout.addWidget(self.controls_sweepType_group)
+        self.controls_sweepType_layout = QtWidgets.QVBoxLayout(self.controls_sweepType_group)
+        self.controls_sweepType_serpentine = QtWidgets.QRadioButton("Serpentine")
+        self.controls_sweepType_serpentine.setChecked(True)
+        self.controls_sweepType_grid = QtWidgets.QRadioButton("Grid")
+        self.controls_sweepType_layout.addWidget(self.controls_sweepType_serpentine)
+        self.controls_sweepType_layout.addWidget(self.controls_sweepType_grid)
+
 
         self.controls_startButton = QtWidgets.QPushButton("Start Sweep")
         self.controls_layout.addWidget(self.controls_startButton)
@@ -159,6 +170,7 @@ class MainWindow(QtWidgets.QWidget):
         self.surf_plot = self.plot_ax.plot_surface(randX, randY.T, randZ, cmap = cm.coolwarm)
         self.plot_ax.set_xlabel("Azimuth")
         self.plot_ax.set_ylabel("Elevation")
+        self.plot_ax.view_init(azim=0,elev=90)
 
         # Plot Controls
         self.plot_controls_group = QtWidgets.QGroupBox("Plot Controls")
@@ -205,7 +217,7 @@ class MainWindow(QtWidgets.QWidget):
         return super().paintEvent(event)
 
     @QtCore.Slot(float, float, float, float, float, float, str)
-    def startMeasurement(self, el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antenna):
+    def startMeasurement(self, el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antenna, point_order):
         print(f"Starting measurement! THIS IS IN MAIN!!!")
         self.ant_sock = None
         if antenna == "receiver":
@@ -213,7 +225,7 @@ class MainWindow(QtWidgets.QWidget):
         else:
             self.ant_sock = self.tx_ant
         self.ant_sock.readyRead.connect(self.on_tcp_data)
-        self.sweepController = sweepControl(el_start, el_stop, el_step, az_start, az_stop, az_step)
+        self.sweepController = sweepControl(el_start, el_stop, el_step, az_start, az_stop, az_step, point_order=point_order)
         self.sweepController.send_command.connect(self.send_cmd)
         self.responseRecv.connect(self.sweepController.on_res_received)
         self.sweepController.new_location.connect(self.on_new_location)
@@ -274,6 +286,12 @@ class MainWindow(QtWidgets.QWidget):
         el_stop = float(self.controls_el_stop_text.text())
         el_step = float(self.controls_el_step_text.text())
 
+        sweeptype = None
+        if self.controls_sweepType_grid.isChecked():
+            sweeptype = "grid"
+        else:
+            sweeptype = "serpentine"
+
         # print(f"Starting Test:")
         # print(f"\tType: {measType}")
         # print(f"\tSweeping: {antSweeping}")
@@ -286,7 +304,7 @@ class MainWindow(QtWidgets.QWidget):
         # print(f"\t\tStop: {el_stop}")
         # print(f"\t\tStep: {el_step}")
 
-        self.startMeasurement(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping)
+        self.startMeasurement(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping, sweeptype)
     
     @QtCore.Slot()
     def up_btn_clicked(self):
