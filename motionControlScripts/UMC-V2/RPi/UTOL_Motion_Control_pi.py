@@ -58,6 +58,11 @@ def execute_cmd(cmd, args):
             az_motor.set_home()
             el_motor.set_home()
             meta['results']['success'] = True
+        elif cmd.find('meas') >= 0:
+            if cmd.find('jitter') >= 0:
+                t, v = el_motor.measure_jitter()
+                meta['results']['time'] = t
+                meta['results']['readings'] = v
         else:
             print(f"Could not find command: {cmd}")
             meta['results']['success'] = False
@@ -109,4 +114,5 @@ if __name__ == "__main__":
 
                     metadata = execute_cmd(script_name, arguments)
                     tx = json.dumps(metadata)
+                    print(f"Sending: {tx}")
                     conn.send(tx.encode())
