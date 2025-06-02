@@ -186,6 +186,8 @@ class MainWindow(QtWidgets.QWidget):
         self.manual_right.clicked.connect(self.right_btn_clicked)
         self.manual_down.clicked.connect(self.down_btn_clicked)
         self.plot_controls_save.clicked.connect(self.save_plot)
+        self.manual_antSelect_tx.clicked.connect(self.antTx_selected)
+        self.manual_antSelect_rx.clicked.connect(self.antRx_selected)
 
     
     def paintEvent(self, event):
@@ -263,8 +265,19 @@ class MainWindow(QtWidgets.QWidget):
     @QtCore.Slot()
     def on_new_el(self, el):
         self.info_el_label.setText(f"Elevation: {el:.04f}")
+    @QtCore.Slot()
     def on_point_finished(self, idx):
         self.info_idx_label.setText(f"Point Index: {idx}")
+    @QtCore.Slot()
+    def antTx_selected(self):
+        # print(f"TX SELECTED")
+        self.ant_sock = self.tx_ant
+        self.ant_sock.readyRead.connect(self.on_tcp_data)
+    @QtCore.Slot()
+    def antRx_selected(self):
+        # print(f"RX SELECTED")
+        self.ant_sock = self.rx_ant
+        self.ant_sock.readyRead.connect(self.on_tcp_data)
 
     @QtCore.Slot()
     def start_btn_clicked(self):
@@ -313,14 +326,15 @@ class MainWindow(QtWidgets.QWidget):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         # print(f"{ant} up {step} degrees")
-        if ant == "transmitter":
-            self.ant_sock = self.tx_ant
-            self.ant_sock.readyRead.connect(self.on_tcp_data)
-            self.tx_ant.write(f'move_el_DM542T.py:{step}'.encode())
-        else:
-            self.ant_sock = self.rx_ant
-            self.ant_sock.readyRead.connect(self.on_tcp_data)
-            self.rx_ant.write(f'move_el_DM542T.py:{step}'.encode())
+        # if ant == "transmitter":
+        #     self.ant_sock = self.tx_ant
+        #     self.ant_sock.readyRead.connect(self.on_tcp_data)
+        #     self.tx_ant.write(f'move_el_DM542T.py:{step}'.encode())
+        # else:
+        #     self.ant_sock = self.rx_ant
+        #     self.ant_sock.readyRead.connect(self.on_tcp_data)
+        #     self.rx_ant.write(f'move_el_DM542T.py:{step}'.encode())
+        self.ant_sock.write(f'move_el_DM542T.py:{step}'.encode())
     
     @QtCore.Slot()
     def down_btn_clicked(self):
@@ -328,10 +342,11 @@ class MainWindow(QtWidgets.QWidget):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         # print(f"{ant} down {step} degrees")
-        if ant == "transmitter":
-            self.tx_ant.write(f'move_el_DM542T.py:{-1 * step}'.encode())
-        else:
-            self.rx_ant.write(f'move_el_DM542T.py:{-1 * step}'.encode())
+        # if ant == "transmitter":
+        #     self.tx_ant.write(f'move_el_DM542T.py:{-1 * step}'.encode())
+        # else:
+        #     self.rx_ant.write(f'move_el_DM542T.py:{-1 * step}'.encode())
+        self.ant_sock.write(f'move_el_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def left_btn_clicked(self):
@@ -430,16 +445,12 @@ class MainWindow(QtWidgets.QWidget):
     def on_tcp_data(self):
         res = self.ant_sock.read(1024)
         if res.isNull():
+            print(f"RES IS NULL!!!")
             return False, None
         
         res_str = res.data().decode()
 
         data = json.loads(res_str)
-
-        print(f"Received data: {data}")
-
-        
-        
 
 
     @QtCore.Slot()
