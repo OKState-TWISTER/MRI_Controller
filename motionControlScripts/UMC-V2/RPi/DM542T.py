@@ -186,12 +186,12 @@ class DM542T:
         else:
             return 360 - encoder_degrees
 
-    def measure_jitter(self, duration_ns=10000000):
+    def measure_jitter(self, duration_ns=1000000000):
         start = time.time_ns()
         values = []
         times = []
         while True:
-            values.append(self.read_encoder_position())
+            values.append(self.encoder_to_degrees(self.read_encoder_position()))
             times.append(time.time_ns())
             if times[-1] - start >= duration_ns:
                 break

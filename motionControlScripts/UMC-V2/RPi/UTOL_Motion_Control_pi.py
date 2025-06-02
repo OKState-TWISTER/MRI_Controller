@@ -114,5 +114,6 @@ if __name__ == "__main__":
 
                     metadata = execute_cmd(script_name, arguments)
                     tx = json.dumps(metadata)
-                    print(f"Sending: {tx}")
-                    conn.send(tx.encode())
+                    print(f"Sending: {len(tx)} bytes")
+                    cnt = conn.send(f"{tx}/UTOL".encode())
+                    print(f"Actually sent: {cnt}")
