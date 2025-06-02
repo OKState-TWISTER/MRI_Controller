@@ -13,6 +13,7 @@ from matplotlib.figure import Figure
 from matplotlib import cm
 import numpy as np
 import scipy
+import json
 
 class MainWindow(QtWidgets.QWidget):
     startTest = QtCore.Signal(float, float, float, float, float, float, str, str)
@@ -406,24 +407,40 @@ class MainWindow(QtWidgets.QWidget):
             self.ant_sock.readAll()
         self.ant_sock.write(cmd.encode())
         self.ant_sock.flush()
-    
+
+    # OLD    
+    # @QtCore.Slot()
+    # def on_tcp_data(self):
+    #     res = self.ant_sock.read(1024)
+    #     if res.isNull():
+    #         return False, None
+
+    #     res_str = res.data().decode()
+    #     # print(f"res_str: {res_str}")
+        
+    #     cmd_arg_split = res_str.split(":")
+    #     cmd_succ = cmd_arg_split[0].split("_")[1] == "succ"
+    #     cmd_plane = cmd_arg_split[1]
+    #     cmd_angle = cmd_arg_split[2]
+    #     if cmd_succ:
+    #         self.responseRecv.emit(cmd_succ, cmd_plane, float(cmd_angle))
+    #     else:
+    #         self.responseRecv.emit(cmd_succ, None, None)
     @QtCore.Slot()
     def on_tcp_data(self):
         res = self.ant_sock.read(1024)
         if res.isNull():
             return False, None
-
-        res_str = res.data().decode()
-        # print(f"res_str: {res_str}")
         
-        cmd_arg_split = res_str.split(":")
-        cmd_succ = cmd_arg_split[0].split("_")[1] == "succ"
-        cmd_plane = cmd_arg_split[1]
-        cmd_angle = cmd_arg_split[2]
-        if cmd_succ:
-            self.responseRecv.emit(cmd_succ, cmd_plane, float(cmd_angle))
-        else:
-            self.responseRecv.emit(cmd_succ, None, None)
+        res_str = res.data().decode()
+
+        data = json.loads(res_str)
+
+        print(f"Received data: {data}")
+
+        
+        
+
 
     @QtCore.Slot()
     def on_sweep_finished(self):
