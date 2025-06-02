@@ -452,6 +452,17 @@ class MainWindow(QtWidgets.QWidget):
 
         data = json.loads(res_str)
 
+        if data['cmd'].find("move") >= 0: #Then we sent a move cmd
+            cmd_succ = data['results']['success']
+            cmd_plane = "el" if data['cmd'].find('el') >= 0 else "az"
+            cmd_angle = float(data['results']['change'])
+            self.responseRecv.emit(cmd_succ, cmd_plane, cmd_angle)
+        elif data['cmd'] == 'set_home':
+            print(f"Home set!")
+        elif data['cmd'] == 'measure_jitter':
+            print(f"Measured jitter")
+            print(f"\tData: {}")
+
 
     @QtCore.Slot()
     def on_sweep_finished(self):
