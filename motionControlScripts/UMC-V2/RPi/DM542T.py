@@ -186,6 +186,17 @@ class DM542T:
         else:
             return 360 - encoder_degrees
 
+    def measure_jitter(self, duration=10):
+        start = time.time()
+        values = []
+        times = []
+        while True:
+            values.append(self.read_encoder_position())
+            times.append(time.time())
+            if times[-1] - start >= duration:
+                break
+        return times, values
+
 if __name__ == "__main__":
     print(f"Debugging motor controls")
     el = DM542T(21, 20, 19, True)
