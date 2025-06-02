@@ -45,20 +45,22 @@ def execute_cmd(cmd, args):
         meta['cmd'] = cmd
         meta['arg'] = args
         meta['results'] = {}
-        if script_name[0:4] == "move":
-            if script_name.find("el") >= 0:
+        if cmd.find("move") >= 0:
+            if cmd.find("el") >= 0:
                 change = el_motor.move(float(args), relative=True if script_name.find("absolute") == -1 else False)
                 meta['results']['change'] = change
                 meta['results']['success'] = True
-            elif script_name.find("az") >= 0:
+            elif cmd.find("az") >= 0:
                 change = az_motor.move(float(args))
                 meta['results']['change'] = change
                 meta['results']['success'] = True
-        elif script_name.find("set_home") >= 0:
+        elif cmd.find("set_home") >= 0:
             az_motor.set_home()
             el_motor.set_home()
             meta['results']['success'] = True
-
+        else:
+            print(f"Could not find command: {cmd}")
+            meta['results']['success'] = False
         return meta
         
     except FileNotFoundError:
