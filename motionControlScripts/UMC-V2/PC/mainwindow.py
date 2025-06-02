@@ -23,6 +23,7 @@ class MainWindow(QtWidgets.QWidget):
         super().__init__()
         
         self.sweepController = None
+        self.readBuffer = QtCore.QByteArray()
 
         self.controls_group = QtWidgets.QGroupBox("Sweep Controls", self)
         self.plot_group = QtWidgets.QGroupBox("Plot", self)
@@ -113,6 +114,10 @@ class MainWindow(QtWidgets.QWidget):
 
         self.controls_startButton = QtWidgets.QPushButton("Start Sweep")
         self.controls_layout.addWidget(self.controls_startButton)
+        self.controls_pauseButton = QtWidgets.QPushButton("Pause Sweep")
+        self.controls_layout.addWidget(self.controls_pauseButton)
+        self.controls_stopButton = QtWidgets.QPushButton("Stop Sweep")
+        self.controls_layout.addWidget(self.controls_stopButton)
 
 
         self.manual_up = QtWidgets.QPushButton("Up", self.manual_group)
@@ -125,6 +130,7 @@ class MainWindow(QtWidgets.QWidget):
         self.manual_step_layout.addWidget(self.manual_step_label)
         self.manual_step_text = QtWidgets.QLineEdit(text="0.1")
         self.manual_step_layout.addWidget(self.manual_step_text)
+        self.manual_meas_jitter = QtWidgets.QPushButton("Measure Jitter", self.manual_group)
         
         self.manual_antSelect_group = QtWidgets.QGroupBox("Antenna", self.manual_group)
         self.manual_antSelect_layout = QtWidgets.QVBoxLayout(self.manual_antSelect_group)
@@ -188,6 +194,7 @@ class MainWindow(QtWidgets.QWidget):
         self.plot_controls_save.clicked.connect(self.save_plot)
         self.manual_antSelect_tx.clicked.connect(self.antTx_selected)
         self.manual_antSelect_rx.clicked.connect(self.antRx_selected)
+        self.manual_meas_jitter.clicked.connect(self.measure_jitter)
 
     
     def paintEvent(self, event):
@@ -207,6 +214,7 @@ class MainWindow(QtWidgets.QWidget):
         self.manual_right.move(self.manual_up.x() + self.manual_left.width(), self.manual_up.y() + self.manual_up.height())
         self.manual_down.move(self.manual_up.x(), self.manual_up.y() + 2 * self.manual_up.height())
 
+        self.manual_meas_jitter.move(self.manual_group.width() - self.manual_meas_jitter.width(), self.manual_group.height() - self.manual_meas_jitter.height())
         self.manual_antSelect_group.move(0, self.manual_down.y() + self.manual_down.height())
 
         self.manual_step_frame.move(self.manual_antSelect_group.width(), self.manual_antSelect_group.y())
@@ -326,14 +334,6 @@ class MainWindow(QtWidgets.QWidget):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         # print(f"{ant} up {step} degrees")
-        # if ant == "transmitter":
-        #     self.ant_sock = self.tx_ant
-        #     self.ant_sock.readyRead.connect(self.on_tcp_data)
-        #     self.tx_ant.write(f'move_el_DM542T.py:{step}'.encode())
-        # else:
-        #     self.ant_sock = self.rx_ant
-        #     self.ant_sock.readyRead.connect(self.on_tcp_data)
-        #     self.rx_ant.write(f'move_el_DM542T.py:{step}'.encode())
         self.ant_sock.write(f'move_el_DM542T.py:{step}'.encode())
     
     @QtCore.Slot()
@@ -342,10 +342,6 @@ class MainWindow(QtWidgets.QWidget):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         # print(f"{ant} down {step} degrees")
-        # if ant == "transmitter":
-        #     self.tx_ant.write(f'move_el_DM542T.py:{-1 * step}'.encode())
-        # else:
-        #     self.rx_ant.write(f'move_el_DM542T.py:{-1 * step}'.encode())
         self.ant_sock.write(f'move_el_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
@@ -353,22 +349,19 @@ class MainWindow(QtWidgets.QWidget):
         # print(f"Left Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        print(f"{ant} left {step} degrees")
-        if ant == "transmitter":
-            self.tx_ant.write(f'move_az_DM542T.py:{-1 * step}'.encode())
-        else:
-            self.rx_ant.write(f'move_az_DM542T.py:{-1 * step}'.encode())
+        # print(f"{ant} left {step} degrees")
+        self.ant_sock.write(f'move_az_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def right_btn_clicked(self):
         # print(f"Right Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        print(f"{ant} right {step} degrees")
-        if ant == "transmitter":
-            self.tx_ant.write(f'move_az_DM542T.py:{step}'.encode())
-        else:
-            self.rx_ant.write(f'move_az_DM542T.py:{step}'.encode())
+        # print(f"{ant} right {step} degrees")
+        self.ant_sock.write(f'move_az_DM542T.py:{step}'.encode())
+    @QtCore.Slot()
+    def measure_jitter(self):
+        self.ant_sock.write(f"measure_jitter:0".encode())
     
     @QtCore.Slot()
     def onNewData(self):
@@ -409,6 +402,19 @@ class MainWindow(QtWidgets.QWidget):
 
             scipy.io.savemat(f"{fd[0]}", mdict)
 
+    def save_jitter(self, time, val):
+        print(f"Saving jitter")
+        fd = QtWidgets.QFileDialog.getSaveFileName(self,filter="Matlab Files (*.mat)")
+
+        print(f"File Destination: {fd}")
+        mdict = {
+            'timestamp': time,
+            'readings': val
+        }
+        scipy.io.savemat(f"{fd[0]}", mdict)
+
+
+
     @QtCore.Slot(float, float)
     def update_loc(az, el):
         print(f"New Location:\n\tAz: {az}\n\tEl: {el}")
@@ -443,13 +449,25 @@ class MainWindow(QtWidgets.QWidget):
     #         self.responseRecv.emit(cmd_succ, None, None)
     @QtCore.Slot()
     def on_tcp_data(self):
-        res = self.ant_sock.read(1024)
+        res = QtCore.QByteArray()
+        res.append(self.ant_sock.readAll())
+        check = res[-5:].data().decode()
+        print(f"CHECK: {check}")
+        self.readBuffer.append(res)
+        if check != "/UTOL":
+            return
+        
+        res = self.readBuffer
+        
         if res.isNull():
             print(f"RES IS NULL!!!")
             return False, None
-        
-        res_str = res.data().decode()
-
+        print(f"Read {res.length()} bytes")
+        res_str = res.data().decode().replace("/UTOL","")
+        # print(f"RES_STR: {res_str}")
+        f = open("test.txt", "w")
+        f.write(res_str)
+        f.close()
         data = json.loads(res_str)
 
         if data['cmd'].find("move") >= 0: #Then we sent a move cmd
@@ -461,7 +479,10 @@ class MainWindow(QtWidgets.QWidget):
             print(f"Home set!")
         elif data['cmd'] == 'measure_jitter':
             print(f"Measured jitter")
-            print(f"\tData: {}")
+            # print(f"\tData: {data['results']['readings']}")
+            self.save_jitter(data['results']['time'], data['results']['readings'])
+            
+        self.readBuffer = QtCore.QByteArray()
 
 
     @QtCore.Slot()
