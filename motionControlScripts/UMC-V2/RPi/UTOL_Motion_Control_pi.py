@@ -44,7 +44,7 @@ def execute_cmd(cmd, args):
         meta = {}
         meta['cmd'] = cmd
         meta['arg'] = args
-        meta['resuts'] = {}
+        meta['results'] = {}
         if script_name[0:4] == "move":
             if script_name.find("el") >= 0:
                 change = el_motor.move(float(args), relative=True if script_name.find("absolute") == -1 else False)
