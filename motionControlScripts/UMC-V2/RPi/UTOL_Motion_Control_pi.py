@@ -5,33 +5,67 @@ import subprocess
 import RPi.GPIO as GPIO
 import time
 from DM542T import DM542T
+import json
 # Global Variables
 HOST = '192.168.27.154'  # Raspberry Pi's IP address
 PORT = 12345       # Arbitrary port
 
 
 
-def execute_script(script_name, arguments):
-    print(f"Executing {script_name}")
+# def execute_script(script_name, arguments):
+#     print(f"Executing {script_name}")
+#     try:
+#         change = 1 # Note: This isn't really called change anymore. Just don't have an easy way to swap this everywhere.
+#         cmd = None
+#         if (script_name == "move_el_DM542T.py"):
+#             cmd = "el"
+#             change = el_motor.move(float(arguments),relative=True)
+#             return True, cmd, float(change)
+#         elif ( script_name == "move_el_DM542T_absolute.py"):
+#             cmd = "el"
+#             change = el_motor.move(float(arguments),relative=False)
+#             return True, cmd, float(change)
+#         elif (script_name == "move_az_DM542T.py"):
+#             cmd = "az"
+#             change = az_motor.move(float(arguments))
+#             return True, cmd, float(change)
+#         elif (script_name == "measure_jitter"):
+#             t, v = el_motor.measure_jitter(float(arguments))
+#         # subprocess.run(["python", script_name] + arguments.split())
+#         print(f'Script "{script_name}" executed with arguments:', arguments)
+#         #print(f'With change {change}')
+#         return False, None, None
+#     except FileNotFoundError:
+#         print(f'Script "{script_name}" not found.')
+#         return False, None
+
+def execute_cmd(cmd, args):
     try:
-        change = 1 # Note: This isn't really called change anymore. Just don't have an easy way to swap this everywhere.
-        cmd = None
-        if (script_name == "move_el_DM542T.py"):
-            cmd = "el"
-            change = el_motor.move(float(arguments),relative=True)
-        elif ( script_name == "move_el_DM542T_absolute.py"):
-            cmd = "el"
-            change = el_motor.move(float(arguments),relative=False)
-        elif (script_name == "move_az_DM542T.py"):
-            cmd = "az"
-            change = az_motor.move(float(arguments))
-        # subprocess.run(["python", script_name] + arguments.split())
-        print(f'Script "{script_name}" executed with arguments:', arguments)
-        #print(f'With change {change}')
-        return True, cmd, float(change)
+        meta = {}
+        meta.cmd = cmd
+        meta.arg = args
+        meta.resuts = {}
+        if script_name[0:4] == "move":
+            if script_name.find("el") >= 0:
+                change = el_motor.move(float(args), relative=True if script_name.find("absolute") == -1 else False)
+                meta.results.change = change
+                meta.results.success = True
+            elif script_name.find("az") >= 0:
+                change = az_motor.move(float(args))
+                meta.results.change = change
+                meta.results.success = True
+        elif script_name.find("set_home") >= 0:
+            az_motor.set_home()
+            el_motor.set_home()
+            meta.results.success = True
+
+        return meta
+        
     except FileNotFoundError:
         print(f'Script "{script_name}" not found.')
         return False, None
+    except IndexError:
+        print(f"Indexing issue. Malformed command? {cmd}")
 
 if __name__ == "__main__":
     # Azimuth Pins
@@ -70,19 +104,7 @@ if __name__ == "__main__":
                     script_name, arguments = script_data
 
                     print(f"Script {script_name}")
-                    if script_name == 'move_az':
-                        print(f"Moving Az {arguments} deg")
-                        # move_az(float(arguments))
-                    elif script_name == 'move_az':
-                        print(f"Moving El {arguments} deg")
-                        # move_el(float(arguments))
-                    elif script_name.find("set_home") >= 0:
-                        az_motor.set_home()
-                        el_motor.set_home()
-                        conn.send("cmd_succ:home:0".encode())
-                    else:
-                        success, cmd, change = execute_script(script_name, arguments)
-                        if success:
-                            conn.send(f"cmd_succ:{cmd}:{change:.4f}".encode())
-                        else:
-                            conn.send("cmd_fail:0:0".encode())
+
+                    metadata = execute_cmd(script_name, arguments)
+                    tx = json.dumps(metadata)
+                    conn.send(tx.encode())
