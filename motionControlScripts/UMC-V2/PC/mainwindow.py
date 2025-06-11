@@ -155,7 +155,7 @@ class MainWindow(QtWidgets.QWidget):
 
         # self.tx_ant = QtNetwork.QAbstractSocket(QtNetwork.QAbstractSocket.SocketType.UnknownSocketType, self)
         self.tx_ant = QtNetwork.QTcpSocket()
-        self.tx_ant.connectToHost("192.168.27.194", 12345)
+        self.tx_ant.connectToHost("192.168.27.195", 12345)
         self.tx_ant.connected.connect(self.connectedToServer_tx)
         self.tx_ant.errorOccurred.connect(self.failedToConnect)
         self.rx_ant = QtNetwork.QTcpSocket()
