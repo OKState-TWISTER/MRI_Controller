@@ -110,7 +110,7 @@ try:
             data_bytes = sock.recv(1024)
             if data_bytes:
                 # print(f"DATA: {data_bytes.decode('utf-8')}")
-                lora_tx += data_bytes
+                lora_tx.append(data_bytes)
         if len(lora_rx) > 0:
             # print(f"[ETHERNET] data from LoRa: {lora_rx}")
             sock.send("".join(lora_rx).encode("utf-8"))
