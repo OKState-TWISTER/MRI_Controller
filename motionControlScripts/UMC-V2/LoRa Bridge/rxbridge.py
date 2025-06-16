@@ -36,16 +36,29 @@ def check_lora():
     while True:
         packet = rfm9x.receive()
         if packet:
-            message = packet.decode('utf-8')
-            print(f"MESSAGE: {message}")
-            lora_rx += message
+            try:
+                message = packet.decode('utf-8')
+                print(f"MESSAGE: {message}")
+                lora_rx += message
+                rfm9x.send('okay\LORA'.encode('utf-8'))
+            except Exception:
+                print(f"[LORA] Error receiving message. Requesting Repeat")
+                rfm9x.send('repeat\LORA'.encode('utf-8'))
 
         if len(lora_tx) > 0:
             print(f"[LORA] Sending {len(lora_tx)} bytes!")
             # rfm9x.send("".join(lora_tx).encode('utf-8'))
             rfm9x.send(bytes(lora_tx))
+            while True:
+                res = rfm9x.receive()
+                if res:
+                    try:
+                        msg = res.decode('utf-8')
+                        if msg == "okay\LORA":
+                            break
+                    except Exception:
+                        rfm9x.send('repeat\LORA'.encode('utf-8'))
             lora_tx = []
-        
 
 
 # Start background thread
@@ -53,7 +66,7 @@ lora_thread = threading.Thread(target=check_lora, daemon=True)
 lora_thread.start()
 
 
-HOST = '192.168.27.195'
+HOST = '192.168.27.155'
 PORT = 12345
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.bind((HOST, PORT))
