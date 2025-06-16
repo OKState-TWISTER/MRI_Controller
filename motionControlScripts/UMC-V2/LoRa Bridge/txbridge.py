@@ -30,21 +30,56 @@ prev_packet = None
 
 lora_tx = []
 lora_rx = []
+lora_last_cmd = []
+lora_ready = True
+
+await_handshake = False
+
+def proc_handshake(msg):
+    for i in range(len(msg)):
+        try:
+            if chr(msg[i]) == 'O':
+                #This is okay. No action necessary.
+                break
+            if chr(msg[i]) == 'R':
+                # This is a request to repeat
+                return False
+        except Exception:
+            # print(f"Corrupted character")
+            pass
+    return True
 
 def check_lora():
-    global lora_rx, lora_tx, rfm9x
+    global lora_rx, lora_tx, rfm9x, await_handshake, lora_ready, lora_last_cmd
     while True:
         packet = rfm9x.receive()
         if packet:
-            message = packet.decode('utf-8')
-            print(f"MESSAGE: {message}")
-            lora_rx += message
+            try:
+                message = packet.decode('utf-8')
+                if await_handshake:
+                    succ = proc_handshake(message)
+                    if succ:
+                        print(f"[LORA] Received Okay!")
+                        lora_ready = True
+                    else:
+                        print(f"[LORA] Received Repeat!")
 
-        if len(lora_tx) > 0:
+                else:
+                    # print(f"MESSAGE: {message}")
+                    lora_rx += message
+                    rfm9x.send('OOOOOOOO'.encode('utf-8'))
+            except Exception:
+                print(f"[LORA] Error receiving message. Requesting Repeat")
+                rfm9x.send('RRRRRRRR'.encode('utf-8'))
+
+        if len(lora_tx) > 0 and lora_ready:
             print(f"[LORA] Sending {len(lora_tx)} bytes!")
             # rfm9x.send("".join(lora_tx).encode('utf-8'))
-            rfm9x.send(bytes(lora_tx))
-            lora_tx = []
+            rfm9x.send(bytes(lora_tx[0]))
+            lora_last_cmd = lora_tx.pop(0)
+            lora_ready = False
+        elif not lora_ready:
+            rfm9x.send(bytes(lora_last_cmd))
         
 
 
@@ -71,10 +106,10 @@ try:
         if readable:
             data_bytes = sock.recv(1024)
             if data_bytes:
-                print(f"DATA: {data_bytes.decode('utf-8')}")
+                # print(f"DATA: {data_bytes.decode('utf-8')}")
                 lora_tx += data_bytes
         if len(lora_rx) > 0:
-            print(f"LoRa -> Ethernet: {lora_rx}")
+            # print(f"[ETHERNET] data from LoRa: {lora_rx}")
             sock.send("".join(lora_rx).encode("utf-8"))
             lora_rx = []
         
