@@ -55,12 +55,14 @@ def check_lora():
         packet = rfm9x.receive()
         if packet:
             try:
+                print(f"[LORA] Raw Message: {packet}")
                 message = packet.decode('utf-8')
                 if await_handshake:
                     succ = proc_handshake(message)
                     if succ:
                         print(f"[LORA] Received Okay!")
                         lora_ready = True
+                        await_handshake = False
                     else:
                         print(f"[LORA] Received Repeat!")
 
@@ -73,11 +75,12 @@ def check_lora():
                 rfm9x.send('RRRRRRRR'.encode('utf-8'))
 
         if len(lora_tx) > 0 and lora_ready:
-            print(f"[LORA] Sending {len(lora_tx)} bytes!")
+            print(f"[LORA] Sending {len(lora_tx[0])} bytes!")
             # rfm9x.send("".join(lora_tx).encode('utf-8'))
             rfm9x.send(bytes(lora_tx[0]))
             lora_last_cmd = lora_tx.pop(0)
             lora_ready = False
+            await_handshake = True
         elif not lora_ready:
             rfm9x.send(bytes(lora_last_cmd))
         
