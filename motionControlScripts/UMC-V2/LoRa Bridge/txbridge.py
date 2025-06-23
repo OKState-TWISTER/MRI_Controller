@@ -41,14 +41,14 @@ def proc_handshake(msg):
         try:
             if chr(msg[i]) == 'O':
                 #This is okay. No action necessary.
-                break
+                return True
             if chr(msg[i]) == 'R':
                 # This is a request to repeat
                 return False
         except Exception:
             # print(f"Corrupted character")
             pass
-    return True
+    return False
 
 def check_lora():
     global lora_rx, lora_tx, rfm9x, await_handshake, lora_ready, lora_last_cmd, needs_repeat
@@ -102,24 +102,43 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 display.fill(0)
 display.text('Running Bridge', 35, 0, 1)
 display.show()
+print("Running Bridge Program")
 while True:
     try:
         # conn, addr = sock.accept()
         sock.connect((HOST, PORT))
-        print("Connected to controller. Running bridge!")
-        while True:
-            readable, _, _ = select.select([sock], [], [], 0)
-            if readable:
-                data_bytes = sock.recv(1024)
-                if data_bytes:
-                    print(f"[ETHERNET] Message received over ETH: {data_bytes.decode('utf-8')}")
-                    lora_tx.append(data_bytes)
-            if len(lora_rx) > 0:
-                # print(f"[ETHERNET] data from LoRa: {lora_rx}")
-                sock.send("".join(lora_rx).encode("utf-8"))
-                lora_rx = []
+    except TimeoutError:
+        print(f"Failed to connect, retrying in 5 seconds")
+        time.sleep(5)
+        continue
 
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        print("Exiting...")
-        sock.close()
+    print("Connected to controller. Running bridge!")
+    while True:
+        readable, _, _ = select.select([sock], [], [], 0)
+        if readable:
+            data_bytes = sock.recv(1024)
+            if data_bytes:
+                print(f"[ETHERNET] Message received over ETH: {data_bytes.decode('utf-8')}")
+                lora_tx.append(data_bytes)
+        else:
+            #print(f"Not readable. Checking connection...")
+            try:
+                data = sock.recv(1, socket.MSG_DONTWAIT | socket.MSG_PEEK)
+                print(f"DATA: {data}")
+                if data == 0: # Will recv a 0 if the socket has closed.
+                    break
+            except BlockingIOError:
+                #print("BlockingIOError")
+                pass # Still connected, so do nothing
+            except ConnectionResetError:
+                break
+            except Exception:
+                print("Unhandled error.")
+                break
+        if len(lora_rx) > 0:
+            # print(f"[ETHERNET] data from LoRa: {lora_rx}")
+            sock.send("".join(lora_rx).encode("utf-8"))
+            lora_rx = []
+
+        time.sleep(0.1)
+        
