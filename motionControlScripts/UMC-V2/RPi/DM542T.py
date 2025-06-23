@@ -74,16 +74,18 @@ class DM542T:
             # Make sure outputs are in safe configuration after loop
             GPIO.output(self.PUL, False)
             self.current_angle = self.current_angle + deg
-            return self.current_angle
+            return self.current_angle, None
         else:
             # print(f"Encoder...")
             encoder_target = deg
             if relative:
-                #print(f"CURRENT ANGLE: {self.current_angle}")
+                print(f"ENCODER TARGET: {encoder_target}")
+                print(f"CURRENT ANGLE: {self.current_angle}")
                 encoder_target += self.current_angle
+                print(f"ENCODER TARGET: {encoder_target}")
             #print(f"TARGET: {encoder_target}")
-            if (deg >= 0):
-                encoder_target = abs(encoder_target) % 360
+            #if (deg >= 0):
+            #    encoder_target = abs(encoder_target) % 360
 
             while True:
                 # Read position from encoder
@@ -123,7 +125,7 @@ class DM542T:
                 else:
                     self.current_angle = current_angle
                     #print(f"NEW ANGLE: {self.current_angle}")
-                    return current_angle
+                    return current_angle, self.read_encoder_position() & 0x7FFF
 
                 time.sleep(0.001)
                 
@@ -186,12 +188,12 @@ class DM542T:
         else:
             return 360 - encoder_degrees
 
-    def measure_jitter(self, duration_ns=1000000000):
+    def measure_jitter(self, duration_ns=10000000000):
         start = time.time_ns()
         values = []
         times = []
         while True:
-            values.append(self.encoder_to_degrees(self.read_encoder_position()))
+            values.append(self.encoder_to_degrees(self.read_encoder_position() & 0x07FF))
             times.append(time.time_ns())
             if times[-1] - start >= duration_ns:
                 break

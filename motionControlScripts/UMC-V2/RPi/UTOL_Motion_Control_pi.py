@@ -47,11 +47,12 @@ def execute_cmd(cmd, args):
         meta['results'] = {}
         if cmd.find("move") >= 0:
             if cmd.find("el") >= 0:
-                change = el_motor.move(float(args), relative=True if script_name.find("absolute") == -1 else False)
+                change, raw = el_motor.move(float(args), relative=True if script_name.find("absolute") == -1 else False)
                 meta['results']['change'] = change
                 meta['results']['success'] = True
+                meta['results']['raw'] = raw 
             elif cmd.find("az") >= 0:
-                change = az_motor.move(float(args))
+                change, raw = az_motor.move(float(args))
                 meta['results']['change'] = change
                 meta['results']['success'] = True
         elif cmd.find("set_home") >= 0:
@@ -87,7 +88,13 @@ if __name__ == "__main__":
     el_motor = DM542T(21, 20, 19, True, True)
     # Listen for commands from the PC on network
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
+        while True:
+            try:        
+                s.bind((HOST, PORT))
+                break
+            except OSError:
+                print(f"Address Already in use... trying again in 5 seconds")
+                time.sleep(5)
         s.listen()
 
         print("Server listening on", (HOST, PORT))
