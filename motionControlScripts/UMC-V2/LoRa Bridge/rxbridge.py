@@ -34,6 +34,8 @@ lora_last_cmd = []
 lora_ready = True
 
 await_handshake = False
+needs_repeat = False
+
 
 def proc_handshake(msg):
     for i in range(len(msg)):
@@ -50,38 +52,40 @@ def proc_handshake(msg):
     return True
 
 def check_lora():
-    global lora_rx, lora_tx, rfm9x, await_handshake, lora_ready, lora_last_cmd
+    global lora_rx, lora_tx, rfm9x, await_handshake, lora_ready, lora_last_cmd, needs_repeat
     while True:
         packet = rfm9x.receive()
         if packet:
             try:
-                print(f"[LORA] Raw Message: {packet}")
-                message = packet.decode('utf-8')
+                print(f"[LORA-RX] Raw Message: {packet}")
+                #message = packet.decode('utf-8')
                 if await_handshake:
-                    succ = proc_handshake(message)
+                    succ = proc_handshake(packet)
                     if succ:
-                        print(f"[LORA] Received Okay!")
+                        print(f"[LORA-TX] Received Okay!")
                         lora_ready = True
                         await_handshake = False
                     else:
-                        print(f"[LORA] Received Repeat!")
+                        print(f"[LORA-TX] Received Repeat!")
+                        needs_repeat = True
 
                 else:
+                    message = packet.decode('utf-8')
                     # print(f"MESSAGE: {message}")
                     lora_rx += message
                     rfm9x.send('OOOOOOOO'.encode('utf-8'))
             except Exception:
-                print(f"[LORA] Error receiving message. Requesting Repeat")
+                print(f"[LORA-RX] Error receiving message. Requesting Repeat")
                 rfm9x.send('RRRRRRRR'.encode('utf-8'))
 
         if len(lora_tx) > 0 and lora_ready:
-            print(f"[LORA] Sending {len(lora_tx[0])} bytes!")
+            print(f"[LORA-TX] Sending {len(lora_tx[0])} bytes!")
             # rfm9x.send("".join(lora_tx).encode('utf-8'))
             rfm9x.send(bytes(lora_tx[0]))
             lora_last_cmd = lora_tx.pop(0)
             lora_ready = False
             await_handshake = True
-        elif not lora_ready:
+        elif not lora_ready and needs_repeat:
             rfm9x.send(bytes(lora_last_cmd))
 
 
@@ -93,26 +97,54 @@ lora_thread.start()
 HOST = '192.168.27.155'
 PORT = 12345
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.bind((HOST, PORT))
+while True:
+    try:
+        sock.bind((HOST, PORT))
+        break
+    except OSError:
+        print(f"OSError. Waiting")
+        time.sleep(5)
 # sock.setblocking(False)
 # sock.settimeout(1.0)
 sock.listen()
 display.fill(0)
 display.text('Running Bridge', 35, 0, 1)
 display.show()
+print("Running Bridge Program")
 try:
-    conn, addr = sock.accept()
     while True:
-        readable, _, _ = select.select([conn], [], [], 0)
-        if readable:
-            data_bytes = conn.recv(1024)
-            if data_bytes:
-                # print(f"DATA: {data_bytes.decode('utf-8')}")
-                lora_tx.append(data_bytes)
-        if len(lora_rx) > 0:
-            # print(f"[ETHERNET] data from LoRa: {lora_rx}")
-            conn.send("".join(lora_rx).encode("utf-8"))
-            lora_rx = []
+        print("Waiting for connection...")
+        conn, addr = sock.accept()
+        print("Connected")
+        while True:
+            readable, _, _ = select.select([conn], [], [], 0)
+            if readable:
+                data_bytes = conn.recv(1024)
+                if data_bytes:
+                    print(f"[ETHERNET] Message received over ETH: {data_bytes.decode('utf-8')}")
+                    lora_tx.append(data_bytes)
+                else:
+                    print(f"[ETHERNET] Socket disconnected. Closing...")
+                    break
+            else:
+                #print(f"Not readable. Checking connection...")
+                try:
+                    data = conn.recv(1, socket.MSG_DONTWAIT | socket.MSG_PEEK)
+                    print(f"DATA: {data}")
+                    if data == 0:
+                        break
+                except BlockingIOError:
+                    #print("BlockingIOError")
+                    pass # Still connected, so do nothing
+                except ConnectionResetError:
+                    break
+                except Exception:
+                    print("Unhandled error.")
+                    break
+            if len(lora_rx) > 0:
+                # print(f"[ETHERNET] data from LoRa: {lora_rx}")
+                conn.send("".join(lora_rx).encode("utf-8"))
+                lora_rx = []
         
 
 
