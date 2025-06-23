@@ -1,17 +1,8 @@
 import sys
 import random
 from PySide6 import QtCore, QtWidgets, QtGui, QtNetwork
-from PySide6.QtCore import QThread
 # from matplotlib import pyplot as plt
-from sweepControlv2 import sweepControl
 
-from matplotlib.backends.backend_qtagg import FigureCanvas
-from matplotlib.backends.backend_qtagg import \
-    NavigationToolbar2QT as NavigationToolbar
-from matplotlib.backends.qt_compat import QtWidgets
-from matplotlib.figure import Figure
-from matplotlib import cm
-import numpy as np
 import scipy
 import json
 from logger import logger
@@ -150,33 +141,6 @@ class MainWindow(QtWidgets.QWidget):
     def on_new_el(self, el):
         self.info_el_label.setText(f"Elevation: {el:.04f}")
 
-    @QtCore.Slot()
-    def start_btn_clicked(self):
-
-        measType = "waveform" if self.controls_typeSelect_waveform.isChecked() else "fft_peaks"
-        antSweeping = "receiver" if self.controls_antSelect_rx.isChecked() else "transmitter"
-        self.ant_sock = None
-        if (antSweeping == "receiver"):
-            self.ant_sock = self.rx_ant
-        else:
-            self.ant_sock = self.tx_ant
-        if self.ant_sock.bytesAvailable():
-            self.ant_sock.readAll()
-        az_start = float(self.controls_az_start_text.text())
-        az_stop = float(self.controls_az_stop_text.text())
-        az_step = float(self.controls_az_step_text.text())
-        
-        el_start = float(self.controls_el_start_text.text())
-        el_stop = float(self.controls_el_stop_text.text())
-        el_step = float(self.controls_el_step_text.text())
-
-        sweeptype = None
-        if self.controls_sweepType_grid.isChecked():
-            sweeptype = "grid"
-        else:
-            sweeptype = "serpentine"
-
-        self.startMeasurement(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping, sweeptype)
     
     @QtCore.Slot()
     def up_btn_clicked(self):
@@ -211,58 +175,6 @@ class MainWindow(QtWidgets.QWidget):
         ant = "transmitter"
         self.log.info(f"{ant} set zero")
         self.ant_sock.write(f'set_home:0'.encode())
-
-    @QtCore.Slot()
-    def measure_jitter(self):
-        self.ant_sock.write(f"measure_jitter:0".encode())
-    
-    @QtCore.Slot()
-    def onNewData(self):
-        if self.surf_plot is None:
-            self.surf_plot = self.plot_ax.plot_surface(self.sweepController.az_angle, self.sweepController.el_angle, self.sweepController.peak_val, cmap = cm.coolwarm)
-        else:
-
-            az_angle = self.sweepController.grid.get_az_angle_grid()
-            el_angle = self.sweepController.grid.get_el_angle_grid()
-            peak_val = self.sweepController.grid.get_peak_val_grid()
-
-            self.surf_plot.remove()
-            self.surf_plot = self.plot_ax.plot_surface(az_angle, el_angle, peak_val, cmap = cm.coolwarm)
-            self.plot_static.draw()
-
-    @QtCore.Slot()
-    def save_plot(self):
-        if self.sweepController is None:
-            self.log.error(f"NO DATA COLLECTED TO SAVE")
-            return
-        self.log.info(f"Saving plot")
-        fd = QtWidgets.QFileDialog.getSaveFileName(self,filter="Matlab Files (*.mat)")
-
-        self.log.debug(f"File Destination: {fd}")
-
-        if fd[0] != "":
-
-            mdict = {
-                'peak_val': self.sweepController.grid.get_peak_val_grid(),
-                'peak_freq': self.sweepController.grid.get_peak_freq_grid(),
-                'az_angle': self.sweepController.grid.get_az_angle_grid(),
-                'el_angle': self.sweepController.grid.get_el_angle_grid(),
-                'point_idx': self.sweepController.grid.get_idx_grid()
-            }
-
-            scipy.io.savemat(f"{fd[0]}", mdict)
-
-    def save_jitter(self, time, val):
-        self.log.info(f"Saving jitter")
-        fd = QtWidgets.QFileDialog.getSaveFileName(self,filter="Matlab Files (*.mat)")
-
-        self.log.debug(f"File Destination: {fd}")
-        mdict = {
-            'timestamp': time,
-            'readings': val
-        }
-        scipy.io.savemat(f"{fd[0]}", mdict)
-
 
 
     @QtCore.Slot(float, float)
@@ -322,21 +234,9 @@ class MainWindow(QtWidgets.QWidget):
 
 
     @QtCore.Slot()
-    def on_sweep_finished(self):
-        self.save_plot()
-
-    @QtCore.Slot()
     def on_cmd_timeout(self):
         self.log.warn(f"Command timed out. Resending...")
         self.send_cmd(self.last_cmd)
-
-    @QtCore.Slot()
-    def toggle_pause(self):
-        if self.controls_pauseButton.text() == "Pause Sweep":
-            self.controls_pauseButton.setText("Resume Sweep")
-        else:
-            self.controls_pauseButton.setText("Pause Sweep")
-            
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
