@@ -14,13 +14,18 @@ from matplotlib import cm
 import numpy as np
 import scipy
 import json
+from logger import logger
 
 class MainWindow(QtWidgets.QWidget):
     startTest = QtCore.Signal(float, float, float, float, float, float, str, str)
     responseRecv = QtCore.Signal(bool, str, float)
+    homeSet = QtCore.Signal()
+    cmdTimedOut = QtCore.Signal()
     
     def __init__(self):
         super().__init__()
+
+        self.log = logger()
         
         self.sweepController = None
         self.readBuffer = QtCore.QByteArray()
@@ -152,16 +157,19 @@ class MainWindow(QtWidgets.QWidget):
         self.info_idx_label = QtWidgets.QLabel("Index: -0.0000")
         self.info_idx_label.setFont(self.info_font)
         self.info_group_layout.addWidget(self.info_idx_label)
+        self.info_enc_raw_label = QtWidgets.QLabel("RAW ENCODER: -0.0000")
+        self.info_enc_raw_label.setFont(self.info_font)
+        self.info_group_layout.addWidget(self.info_enc_raw_label)
 
         # self.tx_ant = QtNetwork.QAbstractSocket(QtNetwork.QAbstractSocket.SocketType.UnknownSocketType, self)
         self.tx_ant = QtNetwork.QTcpSocket()
-        self.tx_ant.connectToHost("192.168.27.195", 12345)
+        self.tx_ant.connectToHost("192.168.27.155", 12345)
         self.tx_ant.connected.connect(self.connectedToServer_tx)
-        self.tx_ant.errorOccurred.connect(self.failedToConnect)
+        self.tx_ant.errorOccurred.connect(self.failedToConnect_tx)
         self.rx_ant = QtNetwork.QTcpSocket()
         self.rx_ant.connectToHost("192.168.27.154", 12345)
         self.rx_ant.connected.connect(self.connectedToServer_rx)
-        self.rx_ant.errorOccurred.connect(self.failedToConnect)
+        self.rx_ant.errorOccurred.connect(self.failedToConnect_rx)
 
         # Plotting
         self.plot_layout = QtWidgets.QVBoxLayout(self.plot_group)
@@ -196,6 +204,23 @@ class MainWindow(QtWidgets.QWidget):
         self.manual_antSelect_rx.clicked.connect(self.antRx_selected)
         self.manual_meas_jitter.clicked.connect(self.measure_jitter)
 
+        self.tx_reconn_timer = QtCore.QTimer(self)
+        self.tx_reconn_timer.setSingleShot(True)
+        self.tx_reconn_timer.setInterval(5000)
+        self.tx_reconn_timer.timeout.connect(self.reconn_Tx)
+        self.rx_reconn_timer = QtCore.QTimer(self)
+        self.rx_reconn_timer.setSingleShot(True)
+        self.rx_reconn_timer.setInterval(5000)
+        self.rx_reconn_timer.timeout.connect(self.reconn_Rx)
+
+        self.cmd_timer = QtCore.QTimer()
+        self.cmd_timer.setSingleShot(True)
+        self.cmd_timer.setInterval(30000)
+        self.cmd_timer.timeout.connect(self.on_cmd_timeout)
+
+        # Calling this to default the manual control window to the TX antenna
+        self.antTx_selected()
+
     
     def paintEvent(self, event):
         self.controls_group.setFixedSize(self.width() / 3, 3 * self.height() / 4)
@@ -229,7 +254,7 @@ class MainWindow(QtWidgets.QWidget):
 
     @QtCore.Slot(float, float, float, float, float, float, str)
     def startMeasurement(self, el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antenna, point_order):
-        print(f"Starting measurement! THIS IS IN MAIN!!!")
+        self.log.info(f"Starting measurement!")
         self.ant_sock = None
         if antenna == "receiver":
             self.ant_sock = self.rx_ant
@@ -243,26 +268,45 @@ class MainWindow(QtWidgets.QWidget):
         self.sweepController.new_az.connect(self.on_new_az)
         self.sweepController.new_el.connect(self.on_new_el)
         self.sweepController.point_finished.connect(self.on_point_finished)
+        self.controls_pauseButton.clicked.connect(self.sweepController.on_toggle_pause)
+        self.controls_pauseButton.clicked.connect(self.toggle_pause)
+        self.controls_stopButton.clicked.connect(self.sweepController.on_stop)
+        self.homeSet.connect(self.sweepController.on_home_set)
         self.measType = measType
         self.measAnt = antenna
         self.sweepController.measurement_finished.connect(self.onNewData)
         # self.sweepController.finished.connect(self.sweepController.deleteLater)
         self.sweepController.sweepFinished.connect(self.on_sweep_finished)
-        print(f"Running Thread")
-        # self.sweep_thread.start()
+
         self.sweepController.start()
-        print(f"Thread Ran")
+
 
     @QtCore.Slot()
     def connectedToServer_rx(self):
-        print(f"Connected to RX server!")
+        self.log.info(f"Connected to RX server!")
     @QtCore.Slot()
     def connectedToServer_tx(self):
-        print(f"Connected to TX server!")
+        self.log.info(f"Connected to TX server!")
     @QtCore.Slot()
-    def failedToConnect(self, err):
-        print(f"Connection to server failed!\n\t{err}")
+    def failedToConnect_tx(self, err):
+        self.log.error(f"Connection to TX server failed!\n\t{err}")
+        self.tx_reconn_timer.start()
+        # self.tx_ant.connectToHost("192.168.27.155", 12345)
+    @QtCore.Slot()
+    def failedToConnect_rx(self, err):
+        self.log.error(f"Connection to RX server failed!\n\t{err}")
+        self.rx_reconn_timer.start()
+        # self.rx_ant.connectToHost("192.168.27.154", 12345)
+    @QtCore.Slot()
+    def reconn_Tx(self):
+        self.log.warn(f"Attempting to reconnect Tx")
+        self.tx_ant.connectToHost("192.168.27.155", 12345)
+    @QtCore.Slot()
+    def reconn_Rx(self):
+        self.log.warn(f"Attempting to reconnect Rx")
+        self.rx_ant.connectToHost("192.168.27.154", 12345)
 
+    
     @QtCore.Slot()
     def on_new_location(self, az, el):
         self.info_az_label.setText(f"Azimuth: {az:.04f}")
@@ -278,18 +322,15 @@ class MainWindow(QtWidgets.QWidget):
         self.info_idx_label.setText(f"Point Index: {idx}")
     @QtCore.Slot()
     def antTx_selected(self):
-        # print(f"TX SELECTED")
         self.ant_sock = self.tx_ant
         self.ant_sock.readyRead.connect(self.on_tcp_data)
     @QtCore.Slot()
     def antRx_selected(self):
-        # print(f"RX SELECTED")
         self.ant_sock = self.rx_ant
         self.ant_sock.readyRead.connect(self.on_tcp_data)
 
     @QtCore.Slot()
     def start_btn_clicked(self):
-        # print(f"Start Clicked!")
 
         measType = "waveform" if self.controls_typeSelect_waveform.isChecked() else "fft_peaks"
         antSweeping = "receiver" if self.controls_antSelect_rx.isChecked() else "transmitter"
@@ -314,50 +355,34 @@ class MainWindow(QtWidgets.QWidget):
         else:
             sweeptype = "serpentine"
 
-        # print(f"Starting Test:")
-        # print(f"\tType: {measType}")
-        # print(f"\tSweeping: {antSweeping}")
-        # print(f"\tAzimuth")
-        # print(f"\t\tStart: {az_start}")
-        # print(f"\t\tStop: {az_stop}")
-        # print(f"\t\tStep: {az_step}")
-        # print(f"\tElevation")
-        # print(f"\t\tStart: {el_start}")
-        # print(f"\t\tStop: {el_stop}")
-        # print(f"\t\tStep: {el_step}")
-
         self.startMeasurement(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping, sweeptype)
     
     @QtCore.Slot()
     def up_btn_clicked(self):
-        # print(f"Up Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        # print(f"{ant} up {step} degrees")
+        self.log.info(f"{ant} up {step} degrees")
         self.ant_sock.write(f'move_el_DM542T.py:{step}'.encode())
     
     @QtCore.Slot()
     def down_btn_clicked(self):
-        # print(f"Down Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        # print(f"{ant} down {step} degrees")
+        self.log.info(f"{ant} down {step} degrees")
         self.ant_sock.write(f'move_el_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def left_btn_clicked(self):
-        # print(f"Left Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        # print(f"{ant} left {step} degrees")
+        self.log.info(f"{ant} left {step} degrees")
         self.ant_sock.write(f'move_az_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def right_btn_clicked(self):
-        # print(f"Right Clicked!")
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
-        # print(f"{ant} right {step} degrees")
+        self.log.info(f"{ant} right {step} degrees")
         self.ant_sock.write(f'move_az_DM542T.py:{step}'.encode())
     @QtCore.Slot()
     def measure_jitter(self):
@@ -372,23 +397,20 @@ class MainWindow(QtWidgets.QWidget):
             az_angle = self.sweepController.grid.get_az_angle_grid()
             el_angle = self.sweepController.grid.get_el_angle_grid()
             peak_val = self.sweepController.grid.get_peak_val_grid()
-            # print(f"PLOT: AZ_ANGLE_GRID: {az_angle}")
 
-            # self.plot_ax.cla()
             self.surf_plot.remove()
             self.surf_plot = self.plot_ax.plot_surface(az_angle, el_angle, peak_val, cmap = cm.coolwarm)
             self.plot_static.draw()
-            # self.surf_plot.set_data(self.sweepController.az_angle, self.sweepController.el_angle, self.sweepController.peak_val)
 
     @QtCore.Slot()
     def save_plot(self):
         if self.sweepController is None:
-            print(f"ERROR: No sweep data to save. You're looking at the demo!")
+            self.log.error(f"NO DATA COLLECTED TO SAVE")
             return
-        print(f"Saving plot")
+        self.log.info(f"Saving plot")
         fd = QtWidgets.QFileDialog.getSaveFileName(self,filter="Matlab Files (*.mat)")
 
-        print(f"File Destination: {fd}")
+        self.log.debug(f"File Destination: {fd}")
 
         if fd[0] != "":
 
@@ -403,10 +425,10 @@ class MainWindow(QtWidgets.QWidget):
             scipy.io.savemat(f"{fd[0]}", mdict)
 
     def save_jitter(self, time, val):
-        print(f"Saving jitter")
+        self.log.info(f"Saving jitter")
         fd = QtWidgets.QFileDialog.getSaveFileName(self,filter="Matlab Files (*.mat)")
 
-        print(f"File Destination: {fd}")
+        self.log.debug(f"File Destination: {fd}")
         mdict = {
             'timestamp': time,
             'readings': val
@@ -416,70 +438,53 @@ class MainWindow(QtWidgets.QWidget):
 
 
     @QtCore.Slot(float, float)
-    def update_loc(az, el):
-        print(f"New Location:\n\tAz: {az}\n\tEl: {el}")
+    def update_loc(self, az, el):
+        self.log.debug(f"New Location:\n\tAz: {az}\n\tEl: {el}")
 
     @QtCore.Slot(str)
     def send_cmd(self, cmd):
         # if self.ant_sock.bytesAvailable() > 0:
         #     _ = self.ant_sock.readAll()
-        # print(f"Sending Command {cmd}")
+        self.log.debug(f"Sending Command {cmd}")
         if self.ant_sock.bytesAvailable:
             self.ant_sock.readAll()
         self.ant_sock.write(cmd.encode())
         self.ant_sock.flush()
+        self.last_cmd = cmd
+        self.cmd_timer.start()
 
-    # OLD    
-    # @QtCore.Slot()
-    # def on_tcp_data(self):
-    #     res = self.ant_sock.read(1024)
-    #     if res.isNull():
-    #         return False, None
-
-    #     res_str = res.data().decode()
-    #     # print(f"res_str: {res_str}")
-        
-    #     cmd_arg_split = res_str.split(":")
-    #     cmd_succ = cmd_arg_split[0].split("_")[1] == "succ"
-    #     cmd_plane = cmd_arg_split[1]
-    #     cmd_angle = cmd_arg_split[2]
-    #     if cmd_succ:
-    #         self.responseRecv.emit(cmd_succ, cmd_plane, float(cmd_angle))
-    #     else:
-    #         self.responseRecv.emit(cmd_succ, None, None)
     @QtCore.Slot()
     def on_tcp_data(self):
         res = QtCore.QByteArray()
         res.append(self.ant_sock.readAll())
         check = res[-5:].data().decode()
-        print(f"CHECK: {check}")
         self.readBuffer.append(res)
         if check != "/UTOL":
             return
-        
+        self.cmd_timer.stop()
         res = self.readBuffer
         
         if res.isNull():
-            print(f"RES IS NULL!!!")
+            self.log.error(f"NULL BYTES FROM TCP SOCKET")
             return False, None
-        print(f"Read {res.length()} bytes")
         res_str = res.data().decode().replace("/UTOL","")
-        # print(f"RES_STR: {res_str}")
+        self.log.debug(f"RES_STR: {res_str}")
         f = open("test.txt", "w")
         f.write(res_str)
         f.close()
         data = json.loads(res_str)
+        self.log.debug(f"JSON PARSED DATA: {data}")
 
         if data['cmd'].find("move") >= 0: #Then we sent a move cmd
             cmd_succ = data['results']['success']
             cmd_plane = "el" if data['cmd'].find('el') >= 0 else "az"
             cmd_angle = float(data['results']['change'])
+            if cmd_plane == "el":
+                self.info_enc_raw_label.setText(f"RAW ENCODER: {data['results']['raw']}")
             self.responseRecv.emit(cmd_succ, cmd_plane, cmd_angle)
         elif data['cmd'] == 'set_home':
-            print(f"Home set!")
+            self.homeSet.emit()
         elif data['cmd'] == 'measure_jitter':
-            print(f"Measured jitter")
-            # print(f"\tData: {data['results']['readings']}")
             self.save_jitter(data['results']['time'], data['results']['readings'])
             
         self.readBuffer = QtCore.QByteArray()
@@ -487,8 +492,20 @@ class MainWindow(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def on_sweep_finished(self):
-        print(f"SAVE_PLOT IN ON_SWEEP_FINISHED")
         self.save_plot()
+
+    @QtCore.Slot()
+    def on_cmd_timeout(self):
+        self.log.warn(f"Command timed out. Resending...")
+        self.send_cmd(self.last_cmd)
+
+    @QtCore.Slot()
+    def toggle_pause(self):
+        if self.controls_pauseButton.text() == "Pause Sweep":
+            self.controls_pauseButton.setText("Resume Sweep")
+        else:
+            self.controls_pauseButton.setText("Pause Sweep")
+            
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
