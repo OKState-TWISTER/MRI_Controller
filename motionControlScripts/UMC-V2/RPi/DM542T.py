@@ -79,13 +79,12 @@ class DM542T:
             # print(f"Encoder...")
             encoder_target = deg
             if relative:
-                print(f"ENCODER TARGET: {encoder_target}")
                 print(f"CURRENT ANGLE: {self.current_angle}")
+                #print("Making a relative el movement")
                 encoder_target += self.current_angle
-                print(f"ENCODER TARGET: {encoder_target}")
             #print(f"TARGET: {encoder_target}")
-            #if (deg >= 0):
-            #    encoder_target = abs(encoder_target) % 360
+            if (deg >= 0):
+                encoder_target = abs(encoder_target) % 360
 
             while True:
                 # Read position from encoder

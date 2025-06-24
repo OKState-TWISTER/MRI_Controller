@@ -7,39 +7,10 @@ import time
 from DM542T import DM542T
 import json
 # Global Variables
-HOST = '192.168.27.154'  # Raspberry Pi's IP address
+HOST = '192.168.27.194'  # Raspberry Pi's IP address
 PORT = 12345       # Arbitrary port
 
-
-
-# def execute_script(script_name, arguments):
-#     print(f"Executing {script_name}")
-#     try:
-#         change = 1 # Note: This isn't really called change anymore. Just don't have an easy way to swap this everywhere.
-#         cmd = None
-#         if (script_name == "move_el_DM542T.py"):
-#             cmd = "el"
-#             change = el_motor.move(float(arguments),relative=True)
-#             return True, cmd, float(change)
-#         elif ( script_name == "move_el_DM542T_absolute.py"):
-#             cmd = "el"
-#             change = el_motor.move(float(arguments),relative=False)
-#             return True, cmd, float(change)
-#         elif (script_name == "move_az_DM542T.py"):
-#             cmd = "az"
-#             change = az_motor.move(float(arguments))
-#             return True, cmd, float(change)
-#         elif (script_name == "measure_jitter"):
-#             t, v = el_motor.measure_jitter(float(arguments))
-#         # subprocess.run(["python", script_name] + arguments.split())
-#         print(f'Script "{script_name}" executed with arguments:', arguments)
-#         #print(f'With change {change}')
-#         return False, None, None
-#     except FileNotFoundError:
-#         print(f'Script "{script_name}" not found.')
-#         return False, None
-
-def execute_cmd(cmd, args):
+def _execute_cmd(cmd, args, timestamp):
     try:
         meta = {}
         meta['cmd'] = cmd
@@ -75,6 +46,33 @@ def execute_cmd(cmd, args):
     except IndexError:
         print(f"Indexing issue. Malformed command? {cmd}")
 
+def execute_cmd(data):
+    meta = data
+    meta['results'] = {}
+    if data['cmd'] == "move":
+        if data['args']['plane'] == "el":
+            change, raw = el_motor.move(float(data['args']['degree']), relative= True if data['args']['relative'] == True else False)
+            meta['results']['change'] = change
+            meta['results']['success'] = True
+            meta['results']['raw'] = raw 
+        elif data['args']['plane'] == "az":
+            change, raw = az_motor.move(float(data['args']['degree']))
+            meta['results']['change'] = change
+            meta['results']['success'] = True
+    elif data['cmd'] == "set_home":
+        az_motor.set_home()
+        el_motor.set_home()
+        meta['results']['success'] = True
+    elif data['cmd'] == 'meas':
+        if data['args']['type'] == 'jitter':
+            t, v = el_motor.measure_jitter()
+            meta['results']['time'] = t
+            meta['results']['readings'] = v
+    else:
+        print(f"Could not find command: {data['cmd']}")
+        meta['results']['success'] = False
+    return meta
+
 if __name__ == "__main__":
     # Azimuth Pins
     # PUL = 13
@@ -99,28 +97,44 @@ if __name__ == "__main__":
 
         print("Server listening on", (HOST, PORT))
 
+        last_cmd_time = 0
+        tx = None
+        allbytes = b''
         while True:
             conn, addr = s.accept()
-            #print('Connected by', addr)
+            print('Connected by', addr)
 
             with conn:
                 while True:
                     #print(f"Listening for Data")
                     data = conn.recv(1024)
+                    allbytes += data
+                    check = allbytes.decode()
                     if not data:
                         break
-                    # Expecting format: script_name:arguments
-                    script_data = data.decode().split(":")
-                    if len(script_data) != 2:
-                        print("Invalid format. Expected: script_name:arguments")
-                        print(f"\t{data.decode()}")
+                    if check.find("/UTOL") == -1:
                         continue
-                    script_name, arguments = script_data
+                    # Expecting format: script_name:arguments
+                    # script_data = data.decode().split(":")
+                    # if len(script_data) != 2:
+                    #     print("Invalid format. Expected: script_name:arguments")
+                    #     print(f"\t{data.decode()}")
+                    #     continue
+                    # script_name, arguments = script_data
+                    rec_cmd = check.split("/UTOL")[0]
+                    print(f"RECEIVED CMD: {rec_cmd}")
+                    allbytes = b''
+                    cmd = json.loads(rec_cmd)
+                    print(f"cmd timestamp <= last_cmd_time -> {cmd['timestamp']} <= {last_cmd_time}")
+                    if cmd['timestamp'] <= last_cmd_time:
+                        print(f"Detected repeat command!")
+                        cnt = conn.send(f"{tx}/UTOL".encode())
+                    else:
 
-                    print(f"Script {script_name}")
-
-                    metadata = execute_cmd(script_name, arguments)
-                    tx = json.dumps(metadata)
-                    print(f"Sending: {len(tx)} bytes")
-                    cnt = conn.send(f"{tx}/UTOL".encode())
-                    print(f"Actually sent: {cnt}")
+                    # metadata = execute_cmd(script_name, arguments)
+                        metadata = execute_cmd(json.loads(rec_cmd))
+                        last_cmd_time = cmd['timestamp']
+                        tx = json.dumps(metadata)
+                        print(f"Sending: {len(tx)} bytes")
+                        cnt = conn.send(f"{tx}/UTOL".encode())
+                        #print(f"Actually sent: {cnt}")
