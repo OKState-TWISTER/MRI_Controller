@@ -16,6 +16,7 @@ class LOG_LEVEL(Enum):
 class colors:
     WARNING = '\033[93m'
     ERROR = '\033[91m'
+    DEBUG = '\033[96m'
     END = '\033[0m'
 
 class logger:
@@ -46,8 +47,8 @@ class logger:
             print(out)
     
     def debug(self, debug):
-        out = f"[INFO] [{datetime.now().isoformat()}] {debug}"
+        out = f"[DEBUG] [{datetime.now().isoformat()}] {debug}"
         self.file.write(f"{out}\n")
         self.file.flush()
         if self.level.value >= LOG_LEVEL.DEBUG.value:
-            print(out)
+            print(f"{colors.DEBUG}{out}{colors.END}")

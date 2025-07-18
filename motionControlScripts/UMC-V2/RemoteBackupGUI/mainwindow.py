@@ -7,6 +7,8 @@ import scipy
 import json
 from logger import logger
 
+import time
+
 class MainWindow(QtWidgets.QWidget):
     responseRecv = QtCore.Signal(bool, str, float)
     cmdTimedOut = QtCore.Signal()
@@ -147,34 +149,68 @@ class MainWindow(QtWidgets.QWidget):
         ant = "transmitter"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} up {step} degrees")
-        self.ant_sock.write(f'move_el_DM542T.py:{step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'el'
+        cmd['args']['deg'] = f'{step}'
+        cmd['args']['rel'] = True
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_el_DM542T.py:{step}'.encode())
     
     @QtCore.Slot()
     def down_btn_clicked(self):
         ant = "transmitter"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} down {step} degrees")
-        self.ant_sock.write(f'move_el_DM542T.py:{-1 * step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'el'
+        cmd['args']['deg'] = f'{-1 * step}'
+        cmd['args']['rel'] = True
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_el_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def left_btn_clicked(self):
         ant = "transmitter"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} left {step} degrees")
-        self.ant_sock.write(f'move_az_DM542T.py:{-1 * step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'az'
+        cmd['args']['deg'] = f'{-1 * step}'
+        self.log.debug(f"LEFT SENT @ {cmd['timestamp']}")
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_az_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def right_btn_clicked(self):
         ant = "transmitter"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} right {step} degrees")
-        self.ant_sock.write(f'move_az_DM542T.py:{step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'az'
+        cmd['args']['deg'] = f'{step}'
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_az_DM542T.py:{step}'.encode())
     
     @QtCore.Slot()
     def set_home_clicked(self):
         ant = "transmitter"
         self.log.info(f"{ant} set zero")
-        self.ant_sock.write(f'set_home:0'.encode())
+        cmd = {}
+        cmd['timestamp'] = time.time()
+        cmd['cmd'] = "set_home"
+        self.send_cmd(cmd)
 
 
     @QtCore.Slot(float, float)
@@ -188,7 +224,8 @@ class MainWindow(QtWidgets.QWidget):
         self.log.debug(f"Sending Command {cmd}")
         if self.ant_sock.bytesAvailable:
             self.ant_sock.readAll()
-        self.ant_sock.write(cmd.encode())
+        toSend = json.dumps(cmd)
+        self.ant_sock.write(f"{toSend}/UTOL".encode())
         self.ant_sock.flush()
         self.last_cmd = cmd
         self.cmd_timer.start()
@@ -216,19 +253,19 @@ class MainWindow(QtWidgets.QWidget):
         self.log.debug(f"JSON PARSED DATA: {data}")
 
         if data['cmd'].find("move") >= 0: #Then we sent a move cmd
-            cmd_succ = data['results']['success']
-            cmd_plane = "el" if data['cmd'].find('el') >= 0 else "az"
-            cmd_angle = float(data['results']['change'])
+            cmd_succ = data['res']['succ']
+            cmd_plane = "el" if data['args']['pl'] == 'el' else "az"
+            cmd_angle = float(data['res']['ch'])
             if cmd_plane == "el":
-                self.info_enc_raw_label.setText(f"RAW ENCODER: {data['results']['raw']}")
-                self.on_new_el(data['results']['change'])
-            if cmd_plane == "az":
-                self.on_new_az(data['results']['change'])
+                self.info_enc_raw_label.setText(f"RAW ENCODER: {data['res']['raw']}")
+                self.on_new_el(data['res']['ch'])
+            elif cmd_plane == "az":
+                self.on_new_az(data['res']['ch'])
             self.responseRecv.emit(cmd_succ, cmd_plane, cmd_angle)
         elif data['cmd'] == 'set_home':
             self.homeSet.emit()
         elif data['cmd'] == 'measure_jitter':
-            self.save_jitter(data['results']['time'], data['results']['readings'])
+            self.save_jitter(data['res']['t'], data['res']['r'])
             
         self.readBuffer = QtCore.QByteArray()
 

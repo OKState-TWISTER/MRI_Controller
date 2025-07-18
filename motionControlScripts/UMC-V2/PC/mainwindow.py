@@ -14,21 +14,25 @@ from matplotlib import cm
 import numpy as np
 import scipy
 import json
-from logger import logger
+from logger import logger, LOG_LEVEL
+import time
 
 class MainWindow(QtWidgets.QWidget):
     startTest = QtCore.Signal(float, float, float, float, float, float, str, str)
-    responseRecv = QtCore.Signal(bool, str, float)
+    responseRecv = QtCore.Signal(dict)
     homeSet = QtCore.Signal()
     cmdTimedOut = QtCore.Signal()
     
     def __init__(self):
         super().__init__()
 
-        self.log = logger()
+        self.log = logger(level=LOG_LEVEL.DEBUG)
         
         self.sweepController = None
         self.readBuffer = QtCore.QByteArray()
+        self.move_queue = []
+        self.cur_az = 0
+        self.sweep_active = False
 
         self.controls_group = QtWidgets.QGroupBox("Sweep Controls", self)
         self.plot_group = QtWidgets.QGroupBox("Plot", self)
@@ -160,10 +164,20 @@ class MainWindow(QtWidgets.QWidget):
         self.info_enc_raw_label = QtWidgets.QLabel("RAW ENCODER: -0.0000")
         self.info_enc_raw_label.setFont(self.info_font)
         self.info_group_layout.addWidget(self.info_enc_raw_label)
+        self.info_max_db = QtWidgets.QLabel("Max dB: NaNNaNNaN")
+        self.info_max_db.setFont(self.info_font)
+        self.info_max_az = QtWidgets.QLabel("Max Az: 0000000000")
+        self.info_max_az.setFont(self.info_font)
+        self.info_max_el = QtWidgets.QLabel("Max El: 0000000000")
+        self.info_max_el.setFont(self.info_font)
+        self.info_group_layout.addWidget(self.info_max_db)
+        self.info_group_layout.addWidget(self.info_max_az)
+        self.info_group_layout.addWidget(self.info_max_el)
+
 
         # self.tx_ant = QtNetwork.QAbstractSocket(QtNetwork.QAbstractSocket.SocketType.UnknownSocketType, self)
         self.tx_ant = QtNetwork.QTcpSocket()
-        self.tx_ant.connectToHost("192.168.27.155", 12345)
+        self.tx_ant.connectToHost("192.168.27.194", 12345)
         self.tx_ant.connected.connect(self.connectedToServer_tx)
         self.tx_ant.errorOccurred.connect(self.failedToConnect_tx)
         self.rx_ant = QtNetwork.QTcpSocket()
@@ -191,6 +205,11 @@ class MainWindow(QtWidgets.QWidget):
         self.plot_controls_group = QtWidgets.QGroupBox("Plot Controls")
         self.plot_layout.addWidget(self.plot_controls_group)
         self.plot_controls_save = QtWidgets.QPushButton("Save", self.plot_controls_group)
+        self.plot_controls_save.setFont(self.info_font)
+        self.plot_controls_goto_max = QtWidgets.QPushButton("Go To Max", self.plot_controls_group)
+        self.plot_controls_goto_max.setFont(self.info_font)
+        self.plot_controls_goto_home = QtWidgets.QPushButton("Go To 0-0", self.plot_controls_group)
+        self.plot_controls_goto_home.setFont(self.info_font)
 
         # CONNECTIONS
         # self.controls_startButton.clicked.connect(self.start_btn_clicked)
@@ -203,6 +222,8 @@ class MainWindow(QtWidgets.QWidget):
         self.manual_antSelect_tx.clicked.connect(self.antTx_selected)
         self.manual_antSelect_rx.clicked.connect(self.antRx_selected)
         self.manual_meas_jitter.clicked.connect(self.measure_jitter)
+        self.plot_controls_goto_home.clicked.connect(self.on_goto_home)
+        self.plot_controls_goto_max.clicked.connect(self.on_goto_max)
 
         self.tx_reconn_timer = QtCore.QTimer(self)
         self.tx_reconn_timer.setSingleShot(True)
@@ -248,13 +269,16 @@ class MainWindow(QtWidgets.QWidget):
         self.info_group.move(self.width() - self.info_group.width(), 0)
 
         self.plot_controls_save.move(20, 20)
-
+        self.plot_controls_goto_home.move(20, 20 + self.plot_controls_save.height() + 20)
+        self.plot_controls_goto_max.move(20, self.plot_controls_goto_home.y() + self.plot_controls_goto_home.height() + 20)
 
         return super().paintEvent(event)
 
     @QtCore.Slot(float, float, float, float, float, float, str)
     def startMeasurement(self, el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antenna, point_order):
+        self.sweep_active = True
         self.log.info(f"Starting measurement!")
+        self.cur_az = 0
         self.ant_sock = None
         if antenna == "receiver":
             self.ant_sock = self.rx_ant
@@ -300,7 +324,7 @@ class MainWindow(QtWidgets.QWidget):
     @QtCore.Slot()
     def reconn_Tx(self):
         self.log.warn(f"Attempting to reconnect Tx")
-        self.tx_ant.connectToHost("192.168.27.155", 12345)
+        self.tx_ant.connectToHost("192.168.27.194", 12345)
     @QtCore.Slot()
     def reconn_Rx(self):
         self.log.warn(f"Attempting to reconnect Rx")
@@ -362,31 +386,119 @@ class MainWindow(QtWidgets.QWidget):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} up {step} degrees")
-        self.ant_sock.write(f'move_el_DM542T.py:{step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'el'
+        cmd['args']['deg'] = f'{step}'
+        cmd['args']['rel'] = True
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_el_DM542T.py:{step}'.encode())
     
     @QtCore.Slot()
     def down_btn_clicked(self):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} down {step} degrees")
-        self.ant_sock.write(f'move_el_DM542T.py:{-1 * step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'el'
+        cmd['args']['deg'] = f'{-1 * step}'
+        cmd['args']['rel'] = True
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_el_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def left_btn_clicked(self):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} left {step} degrees")
-        self.ant_sock.write(f'move_az_DM542T.py:{-1 * step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'az'
+        cmd['args']['deg'] = f'{-1 * step}'
+        self.log.debug(f"LEFT SENT @ {cmd['timestamp']}")
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_az_DM542T.py:{-1 * step}'.encode())
     
     @QtCore.Slot()
     def right_btn_clicked(self):
         ant = "transmitter" if self.manual_antSelect_tx.isChecked() else "receiver"
         step = float(self.manual_step_text.text())
         self.log.info(f"{ant} right {step} degrees")
-        self.ant_sock.write(f'move_az_DM542T.py:{step}'.encode())
+        cmd = {}
+        cmd['cmd'] = "move"
+        cmd['args'] = {}
+        cmd['timestamp'] = time.time()
+        cmd['args']['pl'] = 'az'
+        cmd['args']['deg'] = f'{step}'
+        self.send_cmd(cmd)
+        # self.ant_sock.write(f'move_az_DM542T.py:{step}'.encode())
+
+    @QtCore.Slot()
+    def on_goto_max(self):
+        self.log.info("GOING TO MAX")
+        az_angle = self.sweepController.grid.get_az_angle_grid()
+        el_angle = self.sweepController.grid.get_el_angle_grid()
+        peak_val = self.sweepController.grid.get_peak_val_grid()
+        maxIndex = np.nanargmax(peak_val)
+        max_peak = peak_val.flatten()[maxIndex]
+        max_az = az_angle.flatten()[maxIndex]
+        max_el = el_angle.flatten()[maxIndex]
+        timestamp = time.time()
+        cmd_az = {}
+        cmd_az['cmd'] = "move"
+        cmd_az['args'] = {}
+        cmd_az['timestamp'] = timestamp
+        cmd_az['args']['pl'] = 'az'
+        cmd_az['args']['deg'] = f'{max_az - self.cur_az}'
+        self.move_queue.append(cmd_az)
+        cmd_el = {}
+        cmd_el['cmd'] = "move"
+        cmd_el['args'] = {}
+        cmd_el['timestamp'] = timestamp + 1
+        cmd_el['args']['pl'] = 'el'
+        cmd_el['args']['deg'] = f'{max_el}'
+        cmd_el['args']['rel'] = False
+        self.move_queue.append(cmd_el)
+        self.send_cmd(self.move_queue[0])
+
+    @QtCore.Slot()
+    def on_goto_home(self):
+        self.log.info("GOING TO HOME")
+        timestamp = time.time()
+        cmd_az = {}
+        cmd_az['cmd'] = "move"
+        cmd_az['args'] = {}
+        cmd_az['timestamp'] = timestamp
+        cmd_az['args']['pl'] = 'az'
+        cmd_az['args']['deg'] = f'{-1 * self.cur_az}'
+        self.move_queue.append(cmd_az)
+        cmd_el = {}
+        cmd_el['cmd'] = "move"
+        cmd_el['args'] = {}
+        cmd_el['timestamp'] = timestamp + 1
+        cmd_el['args']['pl'] = 'el'
+        cmd_el['args']['deg'] = f'0'
+        cmd_el['args']['rel'] = False
+        self.move_queue.append(cmd_el)
+        self.send_cmd(self.move_queue[0])
+
     @QtCore.Slot()
     def measure_jitter(self):
-        self.ant_sock.write(f"measure_jitter:0".encode())
+        cmd = {}
+        cmd['cmd'] = 'meas'
+        cmd['args'] = {}
+        cmd['args']['type'] = 'jitter'
+        # cmd['args']['duration_in_ns'] = 
+
+        # self.ant_sock.write(f"measure_jitter:0".encode())
+        self.ant_sock.write(cmd)
     
     @QtCore.Slot()
     def onNewData(self):
@@ -401,6 +513,15 @@ class MainWindow(QtWidgets.QWidget):
             self.surf_plot.remove()
             self.surf_plot = self.plot_ax.plot_surface(az_angle, el_angle, peak_val, cmap = cm.coolwarm)
             self.plot_static.draw()
+
+            maxIndex = np.nanargmax(peak_val)
+            max_peak = peak_val.flatten()[maxIndex]
+            max_az = az_angle.flatten()[maxIndex]
+            max_el = el_angle.flatten()[maxIndex]
+
+            self.info_max_db.setText(f"Max dB: {max_peak}")
+            self.info_max_az.setText(f"Max Az: {max_az}")
+            self.info_max_el.setText(f"Max El: {max_el}")
 
     @QtCore.Slot()
     def save_plot(self):
@@ -441,17 +562,23 @@ class MainWindow(QtWidgets.QWidget):
     def update_loc(self, az, el):
         self.log.debug(f"New Location:\n\tAz: {az}\n\tEl: {el}")
 
-    @QtCore.Slot(str)
+    @QtCore.Slot(dict)
     def send_cmd(self, cmd):
         # if self.ant_sock.bytesAvailable() > 0:
         #     _ = self.ant_sock.readAll()
+        toSend = json.dumps(cmd)
         self.log.debug(f"Sending Command {cmd}")
         if self.ant_sock.bytesAvailable:
             self.ant_sock.readAll()
-        self.ant_sock.write(cmd.encode())
+        self.ant_sock.write(f"{toSend}/UTOL".encode())
         self.ant_sock.flush()
         self.last_cmd = cmd
         self.cmd_timer.start()
+
+        self.manual_down.setEnabled(False)
+        self.manual_up.setEnabled(False)
+        self.manual_right.setEnabled(False)
+        self.manual_left.setEnabled(False)
 
     @QtCore.Slot()
     def on_tcp_data(self):
@@ -461,13 +588,18 @@ class MainWindow(QtWidgets.QWidget):
         self.readBuffer.append(res)
         if check != "/UTOL":
             return
+        self.log.debug("Stopping cmd_timer")
+        self.manual_down.setEnabled(True)
+        self.manual_up.setEnabled(True)
+        self.manual_right.setEnabled(True)
+        self.manual_left.setEnabled(True)
         self.cmd_timer.stop()
         res = self.readBuffer
         
         if res.isNull():
             self.log.error(f"NULL BYTES FROM TCP SOCKET")
             return False, None
-        res_str = res.data().decode().replace("/UTOL","")
+        res_str = res.data().decode().split("/UTOL")[0]
         self.log.debug(f"RES_STR: {res_str}")
         f = open("test.txt", "w")
         f.write(res_str)
@@ -475,23 +607,47 @@ class MainWindow(QtWidgets.QWidget):
         data = json.loads(res_str)
         self.log.debug(f"JSON PARSED DATA: {data}")
 
-        if data['cmd'].find("move") >= 0: #Then we sent a move cmd
-            cmd_succ = data['results']['success']
-            cmd_plane = "el" if data['cmd'].find('el') >= 0 else "az"
-            cmd_angle = float(data['results']['change'])
-            if cmd_plane == "el":
-                self.info_enc_raw_label.setText(f"RAW ENCODER: {data['results']['raw']}")
-            self.responseRecv.emit(cmd_succ, cmd_plane, cmd_angle)
-        elif data['cmd'] == 'set_home':
-            self.homeSet.emit()
-        elif data['cmd'] == 'measure_jitter':
-            self.save_jitter(data['results']['time'], data['results']['readings'])
-            
+        if data['cmd'] == "move":
+            if data['args']['pl'] == "az":
+                self.cur_az += float(data['args']['deg'])
+            self.log.debug(f"Current Az: {self.cur_az}")
+
+        if self.sweep_active:
+
+            if data['cmd'].find("move") >= 0: #Then we sent a move cmd
+                cmd_succ = data['res']['succ']
+                cmd_plane = data['args']['pl']
+                cmd_angle = float(data['res']['ch'])
+                if cmd_plane == "el":
+                    self.info_enc_raw_label.setText(f"RAW ENCODER: {data['res']['raw']}")
+                self.responseRecv.emit(data)
+            elif data['cmd'].find("goto") >= 0: #Then we sent a goto cmd
+                # cmd_succ = data['res']['succ']
+                # cmd_plane = data['args']['pl']
+                # cmd_angle = float(data['res']['ch'])
+                # if cmd_plane == "el":
+                self.info_enc_raw_label.setText(f"RAW ENCODER: {data['res']['el']['raw']}")
+                self.responseRecv.emit(data)
+            elif data['cmd'] == 'set_home':
+                self.homeSet.emit()
+            elif data['cmd'] == 'measure_jitter':
+                self.save_jitter(data['res']['t'], data['res']['r'])
+        else:
+            self.log.debug("DATA FROM NON-SWEEP COMMAND")
+            if len(self.move_queue) > 0:
+                if data['timestamp'] == self.move_queue[0]['timestamp']:
+                    self.move_queue.pop(0)
+                    if len(self.move_queue) > 0:
+                        self.send_cmd(self.move_queue[0])
+                else:
+                    self.log.warn("Timestamp of response does not match non-sweep command timestamp")
+                
         self.readBuffer = QtCore.QByteArray()
 
 
     @QtCore.Slot()
     def on_sweep_finished(self):
+        self.sweep_active = False
         self.save_plot()
 
     @QtCore.Slot()

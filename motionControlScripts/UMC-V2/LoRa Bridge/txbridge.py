@@ -8,7 +8,7 @@ import threading
 import socket
 import select
 import json
-import checksum
+
 
 from logger import logger, LOG_LEVEL
 # Create the I2C interface.
@@ -27,19 +27,28 @@ height = display.height
 CS = DigitalInOut(board.CE1)
 RESET = DigitalInOut(board.D25)
 spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
+
 rfm9x = adafruit_rfm9x.RFM9x(spi, CS, RESET, 915.0)
 rfm9x.tx_power = 23
-prev_packet = None
+rfm9x.node = 2 # Set the node to match the rx bridge destination
+rfm9x.destination = 1 # Set the destination to math the rx bridge node
+rfm9x.ack_delay=0.5
+rfm9x.ack_wait=1.5
+rfm9x.coding_rate = 8
+# rfm9x.spreading_factor = 10
+rfm9x.enable_crc = True
 
 lora_tx = []
 lora_rx = []
 lora_last_cmd = []
-lora_ready = True
 
-await_handshake = False
-needs_repeat = False
+do_ack = True
 
 log = logger(level=LOG_LEVEL.DEBUG)
+
+
+log.debug(f"INIT RFM9X: \n\tTx Power: {rfm9x.tx_power}\n\tSpreading Factor: {rfm9x.spreading_factor}\n\tCRC Enabled: {rfm9x.enable_crc}")
+
 
 def proc_handshake(msg):
     if len(msg) > 8:
@@ -58,77 +67,45 @@ def proc_handshake(msg):
     return msg
 
 def send(data_str):
-    global rfm9x
+    global rfm9x, do_ack
     log.debug(f"[SEND] Sending: {data_str}")
     enc = data_str.encode()
-    chk = checksum.calc(enc)
-    rfm9x.send(chk)
-    log.debug(f"[SEND] Data w/ Checksum: {chk}")
+    if do_ack:
+        succ = rfm9x.send_with_ack(enc)
+        print(f"[SEND] ACK: {succ}")
+    else:
+        rfm9x.send(enc)
+
 
 def send_bytes(data_bytes):
-    global rfm9x
+    global rfm9x, do_ack
     log.debug(f"[SEND] Sending: {data_bytes}")
-    chk = checksum.calc(data_bytes)
-    rfm9x.send(chk)
-    log.debug(f"[SEND] Data w/ Checksum: {chk}")
+    if do_ack:
+        succ = rfm9x.send_with_ack(data_bytes)
+        print(f"[SEND] ACK: {succ}")
+    else:
+        rfm9x.send(data_bytes)
 
 def check_lora():
-    global lora_rx, lora_tx, rfm9x, await_handshake, lora_ready, lora_last_cmd, needs_repeat
+    global lora_rx, lora_tx, rfm9x, lora_last_cmd
     last_sent = 0
     while True:
-        packet = rfm9x.receive()
+        packet = rfm9x.receive(with_ack=True)
         if packet:
-            if checksum.check_msg(packet):
-                log.debug(f"Passed checksum!")
-                packet = packet[:-1] #This removes the checksum
-                try:
-                    log.debug(f"[LORA-RX] Raw Message: {packet}")
-                    log.debug(f"Awaiting handsake? {'YES' if await_handshake else 'NO'}")
-                    if await_handshake:
-                        succ = proc_handshake(packet)
-                        if succ:
-                            log.info(f"[LORA-TX] Received Okay!")
-                            lora_ready = True
-                            await_handshake = False
-                        else:
-                            log.info(f"[LORA-TX] Received Repeat!")
-                            needs_repeat = True
+            try:
+                log.debug(f"[LORA-RX] Raw Message: {packet}")
+                message = packet.decode('utf-8')
+                if message != "!":
+                    lora_rx.append(message)
+                    log.debug(f"[LORA-RX] lora_rx is now: {lora_rx}")
+            except Exception as e:
+                log.warn(f"[LORA-RX] Error receiving message. Requesting Repeat")
+                log.error(f"[LORA-RX] Error {e}")
 
-                    log.debug(f"Was a handshake? {'NO' if proc_handshake(packet) == packet else 'YES'}")
-                    if proc_handshake(packet) == packet:
-                        if await_handshake:
-                            log.warn(f"[LORA-RX] Received a message, but expected a handshake!")
-                        message = packet.decode('utf-8')
-                        log.debug(f"[LORA-RX] MESSAGE: {message}")
-                        lora_rx += message
-                        log.info(f"[LORA-RX] Sending Okay")
-                        send('OOOOOOOO')
-                except Exception:
-                    log.warn(f"[LORA-RX] Error receiving message. Requesting Repeat")
-            else:
-                log.warn(f"[LORA-RX] Checksum failed!")
-                log.debug(f"[LORA-RX] Failed packet: {packet}")
-                log.warn(f"[LORA-RX] Received corrupt packet, requesting repeat")
-                send('RRRRRRRR')
-
-
-        if len(lora_tx) > 0 and lora_ready:
+        if len(lora_tx) > 0:
             log.info(f"[LORA-TX] Sending {len(lora_tx[0])} bytes!")
-            # rfm9x.send("".join(lora_tx).encode('utf-8'))
             send_bytes(bytes(lora_tx[0]))
-            lora_last_cmd = lora_tx.pop(0)
-            lora_ready = False
-            await_handshake = True
-            last_sent = time.time()
-        elif not lora_ready and needs_repeat:
-            last_sent = time.time()
-            send_bytes(bytes(lora_last_cmd))
-        elif not lora_ready and time.time() - last_sent > 5:
-            log.warn(f"[LORA-TX] No response. Re-transmitting")
-            last_sent = time.time()
-            send_bytes(bytes(lora_last_cmd))
-        
-
+            lora_last_cmd = lora_tx.pop(0)        
 
 # Start background thread
 lora_thread = threading.Thread(target=check_lora, daemon=True)
@@ -180,7 +157,8 @@ while True:
         if len(lora_rx) > 0:
             log.debug(f"[ETHERNET] data from LoRa: {''.join(lora_rx)}")
             try:
-                sock.send(''.join(lora_rx).encode("utf-8"))
+                # sock.send(''.join(lora_rx).encode("utf-8"))
+                sock.send(lora_rx[0].encode())
                 lora_rx = []
             except BrokenPipeError:
                 log.warn(f"Broken Pipe. Reopening socket")

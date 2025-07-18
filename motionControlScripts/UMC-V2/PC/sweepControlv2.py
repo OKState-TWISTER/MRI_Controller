@@ -7,7 +7,7 @@ import points
 import pyvisa
 from twister_api.oscilloscope_interface import Oscilloscope
 from logger import logger
-
+import json
 
 
 
@@ -16,7 +16,7 @@ class sweepControl(QtCore.QThread):
     newSweep = QtCore.Signal(int) # (number of points)
     newLocation = QtCore.Signal(float, float)
     sweepFinished = QtCore.Signal()
-    send_command = QtCore.Signal(str)
+    send_command = QtCore.Signal(dict)
     movement_complete = QtCore.Signal()
     target_reached = QtCore.Signal()
     ready_measure = QtCore.Signal()
@@ -25,6 +25,7 @@ class sweepControl(QtCore.QThread):
     new_location = QtCore.Signal(float, float)
     new_az = QtCore.Signal(float)
     new_el = QtCore.Signal(float)
+    scope_err = QtCore.Signal()
 
     def __init__(self, el_start_angle, el_end_angle, el_step_size, az_start_angle, az_end_angle, az_step_size, waveform=False, settling_time=0.2, point_order="serpentine"):
         super().__init__()
@@ -55,19 +56,6 @@ class sweepControl(QtCore.QThread):
         self.save_folder = "C:/Users/UTOL/Desktop/"
         self.save_name = "test"
 
-        
-
-        # el_sweep_size = el_end_angle - el_start_angle
-        # az_sweep_size = az_end_angle - az_start_angle
-        # self.az_values = int(round(az_sweep_size/az_step_size)) + 1
-        # self.el_values = int(round(el_sweep_size/el_step_size)) + 1
-
-        # self.zero_grid = np.zeros((self.el_values, self.az_values))
-        # self.peak_val = np.zeros((self.el_values, self.az_values)) * np.NaN
-        # self.az_angle = np.zeros((self.el_values, self.az_values))
-        # self.el_angle = np.zeros((self.el_values, self.az_values))
-        # self.peak_freq = np.zeros((self.el_values, self.az_values))
-
         self.grid = points.Grid(el_start_angle, el_end_angle, el_step_size, az_start_angle, az_end_angle, az_step_size)
         self.sweep_log.debug(self.grid.get_az_angle_grid())
         self.sweep_log.debug(self.grid.get_el_angle_grid())
@@ -95,10 +83,12 @@ class sweepControl(QtCore.QThread):
 
     def _send_command(self, command):
         self.res_recv = False
-        self.send_command.emit(command)
+        send = command
+        self.send_command.emit(send)
         self.sweep_log.debug(f"SENT CMD: {command}")
         
     def wait_for_response(self):
+        self.res_recv = False
         while self.res_recv == False:
             continue
 
@@ -114,9 +104,12 @@ class sweepControl(QtCore.QThread):
             
         else:
             # Get the FFT Peak
-            peakPWR_temp = self.scope.get_fft_peak(2)
-            peak_freq_temp = self.scope.do_query(f":FUNCtion2:FFT:PEAK:FREQ?")
-            
+            try:
+                peakPWR_temp = self.scope.get_fft_peak(2)
+                peak_freq_temp = self.scope.do_query(f":FUNCtion2:FFT:PEAK:FREQ?")
+            except pyvisa.errors.VisaIOError:
+                self.sweep_log.error(f"Trouble reaching scope!")
+                self.scope_err.emit()
             peak_val = peakPWR_temp
             peak_freq = peak_freq_temp.strip('""')
             
@@ -140,7 +133,10 @@ class sweepControl(QtCore.QThread):
         self.cmd_timer.timeout.connect(self.on_cmd_timeout)
 
         # self._send_command("set_home:0")
-        self._send_command("set_home:0") # Emitting the signal directly to skip waiting for a response
+        cmd = {}
+        cmd['timestamp'] = time.time()
+        cmd['cmd'] = "set_home"
+        self._send_command(cmd) # Emitting the signal directly to skip waiting for a response
         self.az_current_angle = 0
         self.el_current_angle = 0
         self.waveform = waveform
@@ -226,38 +222,77 @@ class sweepControl(QtCore.QThread):
         self.target_point = point
         self.target_point.idx = self.point_index
         az_step = point.az - self.az_current_angle
-        self.move_queue.append(f"move_az_DM542T.py:{az_step}")
-        self.move_queue.append(f'move_el_DM542T_absolute.py:{point.el_ideal}')
+        
+        timestamp = time.time()
+        # move_az = {}
+        # move_az['timestamp'] = timestamp
+        # move_az['cmd'] = "move"
+        # move_az['args'] = {}
+        # move_az['args']['pl'] = "az"
+        # move_az['args']['deg'] = f"{az_step}"
+        # self.move_queue.append(move_az) # self.move_queue.append(f"move_az_DM542T.py:{az_step}")
+        
+        # move_el = {}
+        # move_el['timestamp'] = timestamp + 1 # Adding a second so that this command command "after" the az movement
+        # move_el['cmd'] = "move"
+        # move_el['args'] = {}
+        # move_el['args']['pl'] = "el"
+        # move_el['args']['relative'] = False
+        # move_el['args']['deg'] = f"{point.el_ideal}"
+        # self.move_queue.append(move_el) # self.move_queue.append(f'move_el_DM542T_absolute.py:{point.el_ideal}')
+        
+        goto_cmd = {}
+        goto_cmd['timestamp'] = timestamp
+        goto_cmd['cmd'] = "goto"
+        goto_cmd['args'] = {}
+        goto_cmd['args']['az'] = {}
+        goto_cmd['args']['az']['deg'] = f"{az_step}"
+        goto_cmd['args']['az']['rel'] = False
+        goto_cmd['args']['el'] = {}
+        goto_cmd['args']['el']['deg'] = f"{point.el_ideal}"
+        goto_cmd['args']['el']['rel'] = False
+        self.move_queue.append(goto_cmd)
+        
+        
         self._send_command(self.move_queue[0])
     
     @QtCore.Slot(bool, str, float)
-    def on_res_received(self, succ, cmd, data):
-        self.res_succ = succ
-        self.res_data = data
+    def on_res_received(self, data):
+        # self.res_succ = data['res']['succ']
         self.res_recv = True
+        cmd = data['cmd']
 
         if len(self.move_queue) > 0:
             if cmd == "home": # If the response was to a receive command
                 pass
             elif cmd == "az" or cmd == "el": # If the response was to either azimuth or elevation commands
-                if cmd == "az" and self.move_queue[0].find("az") > 0: # If the response was azimuth and we sent azimuth
+                if cmd == "az" and self.move_queue[0]['args']['pl'] == "az": # If the response was azimuth and we sent azimuth
+                    self.sweep_log.debug("Azimuth response received.")
                     self.move_queue.pop(0)
-                    self.az_current_angle = data
-                    self.new_az.emit(data)
+                    self.az_current_angle = data['res']['ch']
+                    self.new_az.emit(self.az_current_angle)
                     # Nothing else to do...
-                elif cmd == "el" and self.move_queue[0].find("el") > 0:
+                elif cmd == "el" and self.move_queue[0]['args']['pl'] == "el":
+                    self.sweep_log.debug("Elevation response received.")
                     self.move_queue.pop(0)
-                    self.new_el.emit(data)
-                    self.target_point.set_el(self.res_data)
+                    self.new_el.emit(data['res']['ch'])
+                    self.target_point.set_el(data['res']['ch'])
 
                 if len(self.move_queue) == 0:
                     self.target_reached.emit()
                     # self.on_target_reached()
                 else:
                     self._send_command(self.move_queue[0])
+            elif cmd == "goto" and self.move_queue[0]['cmd'] == "goto":
+                self.sweep_log.debug("GOTO Response received.")
+                self.move_queue.pop(0)
+                self.az_current_angle = data['res']['az']['ch']
+                self.new_az.emit(data['res']['az']['ch'])
+                self.new_el.emit(data['res']['el']['ch'])
+                self.target_reached.emit()
 
 
-        self.sweep_log.debug(f"ON_RES_RECV: {self.res_data}")
+        # self.sweep_log.debug(f"ON_RES_RECV: {self.res_data}")
 
     @QtCore.Slot()
     def on_home_set(self):
@@ -312,4 +347,9 @@ class sweepControl(QtCore.QThread):
     def on_cmd_timeout(self):
         self.sweep_log.warn("Command Timed out! Resending...")
         self._send_command(self.move_queue[0])
+
+    @QtCore.Slot()
+    def on_scope_err(self):
+        self.sweep_log.debug("Scope error, returning home!")
+        self.move_to_point(points.Point(0,0))
 
