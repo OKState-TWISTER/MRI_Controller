@@ -42,7 +42,8 @@ def execute_cmd(data):
         meta['res']['succ'] = True
     elif data['cmd'] == 'meas':
         if data['args']['type'] == 'jitter':
-            t, v = el_motor.measure_jitter()
+            dur = float(data['args']['duration'])
+            t, v = el_motor.measure_jitter(dur*1000000) # Duration argument from cmd in ms, measure_jitter duration in ns
             meta['res']['t'] = t
             meta['res']['r'] = v
     else:

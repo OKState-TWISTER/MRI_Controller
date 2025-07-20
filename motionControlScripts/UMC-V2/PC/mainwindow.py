@@ -2,8 +2,8 @@ import sys
 import random
 from PySide6 import QtCore, QtWidgets, QtGui, QtNetwork
 from PySide6.QtCore import QThread
+from PySide6.QtWidgets import QSizePolicy
 # from matplotlib import pyplot as plt
-from sweepControlv2 import sweepControl
 
 from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.backends.backend_qtagg import \
@@ -17,8 +17,16 @@ import json
 from logger import logger, LOG_LEVEL
 import time
 
+# Measurement Controllers
+from measurement_controls.sweepControl import sweepControl
+from measurement_controls.jitter import JitterController
+
+# Devices
+from devices.motion_pi import MotionPi
+from devices.scopecontrol import ScopeController
+
 # Custom Widgets
-from controlWidgets import SweepFFTControlWidget
+from controlWidgets import SweepFFTControlWidget, WaveformControlWidget, StillFFTControlWidget, JitterBothEndsControlWidget, JitterSingleEndControlWidget
 
 class MainWindow(QtWidgets.QWidget):
     startTest = QtCore.Signal(float, float, float, float, float, float, str, str)
@@ -30,6 +38,9 @@ class MainWindow(QtWidgets.QWidget):
         super().__init__()
 
         self.log = logger(level=LOG_LEVEL.DEBUG)
+        self.scope = ScopeController(logger=self.log)
+
+        self.jitter_controller = None
         
         self.sweepController = None
         self.readBuffer = QtCore.QByteArray()
@@ -46,24 +57,28 @@ class MainWindow(QtWidgets.QWidget):
         self.controls_layout = QtWidgets.QVBoxLayout(self.controls_group)
         self.controls_typeSelect_group = QtWidgets.QGroupBox("Measurment Type")
         self.controls_layout.addWidget(self.controls_typeSelect_group)
-        # self.controls_antSelect_group = QtWidgets.QGroupBox("Antenna")
-        # self.controls_layout.addWidget(self.controls_antSelect_group)
+        self.controls_typeSelect_group.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Maximum)
+
 
         self.controls_typeSelect_layout = QtWidgets.QVBoxLayout(self.controls_typeSelect_group)
-        self.controls_typeSelect_waveform = QtWidgets.QRadioButton("Waveform")
-        self.controls_typeSelect_waveform.setChecked(True)
-        self.controls_typeSelect_fftPeaks = QtWidgets.QRadioButton("FFT Peaks")
-        self.controls_typeSelect_layout.addWidget(self.controls_typeSelect_waveform)
-        self.controls_typeSelect_layout.addWidget(self.controls_typeSelect_fftPeaks)
+        self.controls_typeSelect_drop = QtWidgets.QComboBox()
+        self.controls_typeSelect_drop.addItem("Waveform")
+        self.controls_typeSelect_drop.addItem("FFT Peaks (Sweep)")
+        self.controls_typeSelect_drop.addItem("FFT Peaks (Stationary)")
+        self.controls_typeSelect_drop.addItem("Jitter (Both Ends)")
+        self.controls_typeSelect_drop.addItem("Jitter (Single End)")
+        self.controls_typeSelect_layout.addWidget(self.controls_typeSelect_drop)
         
         self.controls_dynamic_frame = QtWidgets.QFrame()
         self.controls_layout.addWidget(self.controls_dynamic_frame)
+        self.controls_dynamic_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # self.controls_dynamic_frame.setStyleSheet("QFrame { border: 3px solid red; }")
 
-        self.controls_startButton = QtWidgets.QPushButton("Start Sweep")
+        self.controls_startButton = QtWidgets.QPushButton("Start Measurement")
         self.controls_layout.addWidget(self.controls_startButton)
-        self.controls_pauseButton = QtWidgets.QPushButton("Pause Sweep")
+        self.controls_pauseButton = QtWidgets.QPushButton("Pause Measurement")
         self.controls_layout.addWidget(self.controls_pauseButton)
-        self.controls_stopButton = QtWidgets.QPushButton("Stop Sweep")
+        self.controls_stopButton = QtWidgets.QPushButton("Stop Measurement")
         self.controls_layout.addWidget(self.controls_stopButton)
 
         self.manual_up = QtWidgets.QPushButton("Up", self.manual_group)
@@ -111,16 +126,12 @@ class MainWindow(QtWidgets.QWidget):
         self.info_group_layout.addWidget(self.info_max_az)
         self.info_group_layout.addWidget(self.info_max_el)
 
-
-        # self.tx_ant = QtNetwork.QAbstractSocket(QtNetwork.QAbstractSocket.SocketType.UnknownSocketType, self)
-        self.tx_ant = QtNetwork.QTcpSocket()
-        self.tx_ant.connectToHost("192.168.27.194", 12345)
+        self.tx_ant = MotionPi("192.168.27.194", 12345, logger=self.log, retry_ms=5000, nickname="Tx Pi")
         self.tx_ant.connected.connect(self.connectedToServer_tx)
-        self.tx_ant.errorOccurred.connect(self.failedToConnect_tx)
-        self.rx_ant = QtNetwork.QTcpSocket()
-        self.rx_ant.connectToHost("192.168.27.154", 12345)
+
+        self.rx_ant = MotionPi("192.168.27.154", 12345, logger=self.log, retry_ms=5000, nickname="Rx Pi")
         self.rx_ant.connected.connect(self.connectedToServer_rx)
-        self.rx_ant.errorOccurred.connect(self.failedToConnect_rx)
+
 
         # Plotting
         self.plot_layout = QtWidgets.QVBoxLayout(self.plot_group)
@@ -149,8 +160,8 @@ class MainWindow(QtWidgets.QWidget):
         self.plot_controls_goto_home.setFont(self.info_font)
 
         # CONNECTIONS
-        # self.controls_startButton.clicked.connect(self.start_btn_clicked)
-        # self.controls_startButton.clicked.connect(self.start_btn_clicked)
+        self.controls_startButton.clicked.connect(self.start_btn_clicked)
+        self.controls_stopButton.clicked.connect(self.stop_btn_clicked)
         self.manual_up.clicked.connect(self.up_btn_clicked)
         self.manual_left.clicked.connect(self.left_btn_clicked)
         self.manual_right.clicked.connect(self.right_btn_clicked)
@@ -161,23 +172,46 @@ class MainWindow(QtWidgets.QWidget):
         self.manual_meas_jitter.clicked.connect(self.measure_jitter)
         self.plot_controls_goto_home.clicked.connect(self.on_goto_home)
         self.plot_controls_goto_max.clicked.connect(self.on_goto_max)
+        self.controls_typeSelect_drop.currentTextChanged.connect(self.onNewMeasurementSelected)
 
-        self.tx_reconn_timer = QtCore.QTimer(self)
-        self.tx_reconn_timer.setSingleShot(True)
-        self.tx_reconn_timer.setInterval(5000)
-        self.tx_reconn_timer.timeout.connect(self.reconn_Tx)
-        self.rx_reconn_timer = QtCore.QTimer(self)
-        self.rx_reconn_timer.setSingleShot(True)
-        self.rx_reconn_timer.setInterval(5000)
-        self.rx_reconn_timer.timeout.connect(self.reconn_Rx)
+        # self.tx_reconn_timer = QtCore.QTimer(self)
+        # self.tx_reconn_timer.setSingleShot(True)
+        # self.tx_reconn_timer.setInterval(5000)
+        # self.tx_reconn_timer.timeout.connect(self.reconn_Tx)
+        # self.rx_reconn_timer = QtCore.QTimer(self)
+        # self.rx_reconn_timer.setSingleShot(True)
+        # self.rx_reconn_timer.setInterval(5000)
+        # self.rx_reconn_timer.timeout.connect(self.reconn_Rx)
 
-        self.cmd_timer = QtCore.QTimer()
-        self.cmd_timer.setSingleShot(True)
-        self.cmd_timer.setInterval(30000)
-        self.cmd_timer.timeout.connect(self.on_cmd_timeout)
+        self.cmd_timer_rx = QtCore.QTimer()
+        self.cmd_timer_rx.setSingleShot(True)
+        self.cmd_timer_rx.setInterval(30000)
+        self.cmd_timer_rx.timeout.connect(self.on_cmd_timeout)
+        
+        self.cmd_timer_tx = QtCore.QTimer()
+        self.cmd_timer_tx.setSingleShot(True)
+        self.cmd_timer_tx.setInterval(30000)
+        self.cmd_timer_tx.timeout.connect(self.on_cmd_timeout)
 
         # Calling this to default the manual control window to the TX antenna
         self.antTx_selected()
+
+        # Creating and preparing measurement control widgets
+        self.controlWidgets = {}
+        self.controlWidgets["Waveform"] = WaveformControlWidget(self.controls_dynamic_frame)
+        self.controlWidgets["Waveform"].setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.controlWidgets["FFT Peaks (Sweep)"] = SweepFFTControlWidget(self.controls_dynamic_frame)
+        self.controlWidgets["FFT Peaks (Sweep)"].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.controlWidgets["FFT Peaks (Sweep)"].hide()
+        self.controlWidgets["FFT Peaks (Stationary)"] = StillFFTControlWidget(self.controls_dynamic_frame)
+        self.controlWidgets["FFT Peaks (Stationary)"].setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.controlWidgets["FFT Peaks (Stationary)"].hide()
+        self.controlWidgets["Jitter (Both Ends)"] = JitterBothEndsControlWidget(self.controls_dynamic_frame)
+        self.controlWidgets["Jitter (Both Ends)"].setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.controlWidgets["Jitter (Both Ends)"].hide()
+        self.controlWidgets["Jitter (Single End)"] = JitterSingleEndControlWidget(self.controls_dynamic_frame)
+        self.controlWidgets["Jitter (Single End)"].setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.controlWidgets["Jitter (Single End)"].hide()
 
     
     def paintEvent(self, event):
@@ -212,7 +246,7 @@ class MainWindow(QtWidgets.QWidget):
         return super().paintEvent(event)
 
     @QtCore.Slot(float, float, float, float, float, float, str)
-    def startMeasurement(self, el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antenna, point_order):
+    def startSweepMeasurement(self, el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antenna, point_order):
         self.sweep_active = True
         self.log.info(f"Starting measurement!")
         self.cur_az = 0
@@ -222,7 +256,7 @@ class MainWindow(QtWidgets.QWidget):
         else:
             self.ant_sock = self.tx_ant
         self.ant_sock.readyRead.connect(self.on_tcp_data)
-        self.sweepController = sweepControl(el_start, el_stop, el_step, az_start, az_stop, az_step, point_order=point_order)
+        self.sweepController = sweepControl(el_start, el_stop, el_step, az_start, az_stop, az_step, scope=self.scope, point_order=point_order)
         self.sweepController.send_command.connect(self.send_cmd)
         self.responseRecv.connect(self.sweepController.on_res_received)
         self.sweepController.new_location.connect(self.on_new_location)
@@ -248,25 +282,6 @@ class MainWindow(QtWidgets.QWidget):
     @QtCore.Slot()
     def connectedToServer_tx(self):
         self.log.info(f"Connected to TX server!")
-    @QtCore.Slot()
-    def failedToConnect_tx(self, err):
-        self.log.error(f"Connection to TX server failed!\n\t{err}")
-        self.tx_reconn_timer.start()
-        # self.tx_ant.connectToHost("192.168.27.155", 12345)
-    @QtCore.Slot()
-    def failedToConnect_rx(self, err):
-        self.log.error(f"Connection to RX server failed!\n\t{err}")
-        self.rx_reconn_timer.start()
-        # self.rx_ant.connectToHost("192.168.27.154", 12345)
-    @QtCore.Slot()
-    def reconn_Tx(self):
-        self.log.warn(f"Attempting to reconnect Tx")
-        self.tx_ant.connectToHost("192.168.27.194", 12345)
-    @QtCore.Slot()
-    def reconn_Rx(self):
-        self.log.warn(f"Attempting to reconnect Rx")
-        self.rx_ant.connectToHost("192.168.27.154", 12345)
-
     
     @QtCore.Slot()
     def on_new_location(self, az, el):
@@ -292,31 +307,42 @@ class MainWindow(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def start_btn_clicked(self):
+        if (self.controls_typeSelect_drop.currentText() == "FFT Peaks (Sweep)"):
+            measType = "fft_peaks"
+            antSweeping = "receiver" if self.controlWidgets["FFT Peaks (Sweep)"].controls_antSelect_rx.isChecked() else "transmitter"
+            self.ant_sock = None
+            if (antSweeping == "receiver"):
+                self.ant_sock = self.rx_ant
+            else:
+                self.ant_sock = self.tx_ant
+            if self.ant_sock.bytesAvailable():
+                self.ant_sock.readAll()
+            az_start = float(self.controlWidgets["FFT Peaks (Sweep)"].controls_az_start_text.text())
+            az_stop = float(self.controlWidgets["FFT Peaks (Sweep)"].controls_az_stop_text.text())
+            az_step = float(self.controlWidgets["FFT Peaks (Sweep)"].controls_az_step_text.text())
+            
+            el_start = float(self.controlWidgets["FFT Peaks (Sweep)"].controls_el_start_text.text())
+            el_stop = float(self.controlWidgets["FFT Peaks (Sweep)"].controls_el_stop_text.text())
+            el_step = float(self.controlWidgets["FFT Peaks (Sweep)"].controls_el_step_text.text())
 
-        measType = "waveform" if self.controls_typeSelect_waveform.isChecked() else "fft_peaks"
-        antSweeping = "receiver" if self.controls_antSelect_rx.isChecked() else "transmitter"
-        self.ant_sock = None
-        if (antSweeping == "receiver"):
-            self.ant_sock = self.rx_ant
-        else:
-            self.ant_sock = self.tx_ant
-        if self.ant_sock.bytesAvailable():
-            self.ant_sock.readAll()
-        az_start = float(self.controls_az_start_text.text())
-        az_stop = float(self.controls_az_stop_text.text())
-        az_step = float(self.controls_az_step_text.text())
-        
-        el_start = float(self.controls_el_start_text.text())
-        el_stop = float(self.controls_el_stop_text.text())
-        el_step = float(self.controls_el_step_text.text())
+            sweeptype = None
+            if self.controlWidgets["FFT Peaks (Sweep)"].controls_sweepType_grid.isChecked():
+                sweeptype = "grid"
+            else:
+                sweeptype = "serpentine"
+            self.startSweepMeasurement(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping, sweeptype)
+        elif (self.controls_typeSelect_drop.currentText() == "Jitter (Both Ends)"):
+            self.log.info("Running a jitter measurement.")
+            jitter_duration = self.controlWidgets["Jitter (Both Ends)"].duration_spinbox.value()
+            self.log.debug(f"Jitter measurement duration: {jitter_duration}")
 
-        sweeptype = None
-        if self.controls_sweepType_grid.isChecked():
-            sweeptype = "grid"
-        else:
-            sweeptype = "serpentine"
-
-        self.startMeasurement(el_start, el_stop, el_step, az_start, az_stop, az_step, measType, antSweeping, sweeptype)
+            if self.jitter_controller == None:
+                self.jitter_controller = JitterController(self.scope)
+            self.jitter_controller.startMeasurement(jitter_duration, side=None)
+    
+    @QtCore.Slot()
+    def stop_btn_clicked(self):
+        pass
     
     @QtCore.Slot()
     def up_btn_clicked(self):
@@ -598,6 +624,37 @@ class MainWindow(QtWidgets.QWidget):
             self.controls_pauseButton.setText("Resume Sweep")
         else:
             self.controls_pauseButton.setText("Pause Sweep")
+
+    @QtCore.Slot(str)
+    def onNewMeasurementSelected(self, meas):
+        print(meas)
+
+        self.controlWidgets["Waveform"].hide()
+        self.controlWidgets["FFT Peaks (Sweep)"].hide()
+        self.controlWidgets["FFT Peaks (Stationary)"].hide()
+        self.controlWidgets["Jitter (Both Ends)"].hide()
+        self.controlWidgets["Jitter (Single End)"].hide()
+
+        self.controlWidgets[meas].show()
+
+    @QtCore.Slot(dict, str)
+    def on_send_command_to_target(self, cmd, target):
+        # if self.ant_sock.bytesAvailable() > 0:
+        #     _ = self.ant_sock.readAll()
+        toSend = json.dumps(cmd)
+        self.log.debug(f"Sending Command {cmd}")
+        if (target == "tx"):
+            if self.ant_sock.bytesAvailable:
+                self.ant_sock.readAll()
+            self.ant_sock.write(f"{toSend}/UTOL".encode())
+            self.ant_sock.flush()
+        # self.last_cmd = cmd
+        # self.cmd_timer.start()
+
+        self.manual_down.setEnabled(False)
+        self.manual_up.setEnabled(False)
+        self.manual_right.setEnabled(False)
+        self.manual_left.setEnabled(False)
             
 
 if __name__ == "__main__":

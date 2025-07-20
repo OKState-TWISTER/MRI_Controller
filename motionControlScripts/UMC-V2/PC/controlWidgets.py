@@ -1,9 +1,17 @@
 from PySide6 import QtCore, QtWidgets, QtGui, QtNetwork
+from PySide6.QtWidgets import QSizePolicy
 
+# FFT Peaks (Sweep)
 class SweepFFTControlWidget(QtWidgets.QWidget):
-    def __init__(self):        
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.frame_base = QtWidgets.QFrame(self)
+        # self.frame_base.setStyleSheet("QFrame { border: 3px solid red; }")
+        self.frame_base.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.controls_layout = QtWidgets.QGridLayout(self.frame_base)
         self.controls_antSelect_group = QtWidgets.QGroupBox("Antenna")
-        self.controls_layout.addWidget(self.controls_antSelect_group)
+        self.controls_antSelect_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.controls_layout.addWidget(self.controls_antSelect_group, 0, 0)
         self.controls_antSelect_layout = QtWidgets.QVBoxLayout(self.controls_antSelect_group)
         self.controls_antSelect_tx = QtWidgets.QRadioButton("Transmitter")
         self.controls_antSelect_tx.setChecked(True)
@@ -12,7 +20,7 @@ class SweepFFTControlWidget(QtWidgets.QWidget):
         self.controls_antSelect_layout.addWidget(self.controls_antSelect_rx)
 
         self.controls_az_group = QtWidgets.QGroupBox("Azimuth")
-        self.controls_layout.addWidget(self.controls_az_group)
+        self.controls_layout.addWidget(self.controls_az_group, 1, 0)
         self.controls_az_layout = QtWidgets.QVBoxLayout(self.controls_az_group)
         self.controls_az_start_frame = QtWidgets.QFrame()
         self.controls_az_layout.addWidget(self.controls_az_start_frame)
@@ -37,7 +45,7 @@ class SweepFFTControlWidget(QtWidgets.QWidget):
         self.controls_az_step_layout.addWidget(self.controls_az_step_text)
 
         self.controls_el_group = QtWidgets.QGroupBox("Elevation")
-        self.controls_layout.addWidget(self.controls_el_group)
+        self.controls_layout.addWidget(self.controls_el_group, 1, 1)
         self.controls_el_layout = QtWidgets.QVBoxLayout(self.controls_el_group)
         self.controls_el_start_frame = QtWidgets.QFrame()
         self.controls_el_layout.addWidget(self.controls_el_start_frame)
@@ -63,10 +71,42 @@ class SweepFFTControlWidget(QtWidgets.QWidget):
         self.controls_el_step_layout.addWidget(self.controls_el_step_text)
 
         self.controls_sweepType_group = QtWidgets.QGroupBox("Sweep Type")
-        self.controls_layout.addWidget(self.controls_sweepType_group)
+        self.controls_layout.addWidget(self.controls_sweepType_group, 0, 1)
         self.controls_sweepType_layout = QtWidgets.QVBoxLayout(self.controls_sweepType_group)
         self.controls_sweepType_serpentine = QtWidgets.QRadioButton("Serpentine")
         self.controls_sweepType_serpentine.setChecked(True)
         self.controls_sweepType_grid = QtWidgets.QRadioButton("Grid")
         self.controls_sweepType_layout.addWidget(self.controls_sweepType_serpentine)
         self.controls_sweepType_layout.addWidget(self.controls_sweepType_grid)
+
+# Waveform
+class WaveformControlWidget(QtWidgets.QWidget):
+    def __init__(self,parent=None):
+        super().__init__(parent=parent)
+        self.label = QtWidgets.QLabel("Not yet implemented...", self)
+
+# FFT Peaks (Stationary)
+class StillFFTControlWidget(QtWidgets.QWidget):
+    def __init__(self,parent=None):
+        super().__init__(parent=parent)
+        self.label = QtWidgets.QLabel("Not yet implemented...", self)
+
+# Jitter (Both Ends)
+class JitterBothEndsControlWidget(QtWidgets.QWidget):
+    def __init__(self,parent=None):
+        super().__init__(parent=parent)
+        self.base_frame = QtWidgets.QFrame(self)
+        self.base_layout = QtWidgets.QVBoxLayout(self.base_frame)
+        self.duration_frame = QtWidgets.QFrame()
+        self.base_layout.addWidget(self.duration_frame)
+        self.duration_layout = QtWidgets.QHBoxLayout(self.duration_frame)
+        self.duration_label = QtWidgets.QLabel("Duration (Seconds):")
+        self.duration_spinbox = QtWidgets.QDoubleSpinBox()
+        self.duration_layout.addWidget(self.duration_label)
+        self.duration_layout.addWidget(self.duration_spinbox)
+
+# Jitter (Single End)
+class JitterSingleEndControlWidget(QtWidgets.QWidget):
+    def __init__(self,parent=None):
+        super().__init__(parent=parent)
+        self.label = QtWidgets.QLabel("Not yet implemented...", self)
