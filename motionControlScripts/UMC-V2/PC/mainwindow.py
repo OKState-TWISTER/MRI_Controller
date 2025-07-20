@@ -17,6 +17,9 @@ import json
 from logger import logger, LOG_LEVEL
 import time
 
+# Custom Widgets
+from controlWidgets import SweepFFTControlWidget
+
 class MainWindow(QtWidgets.QWidget):
     startTest = QtCore.Signal(float, float, float, float, float, float, str, str)
     responseRecv = QtCore.Signal(dict)
@@ -43,8 +46,8 @@ class MainWindow(QtWidgets.QWidget):
         self.controls_layout = QtWidgets.QVBoxLayout(self.controls_group)
         self.controls_typeSelect_group = QtWidgets.QGroupBox("Measurment Type")
         self.controls_layout.addWidget(self.controls_typeSelect_group)
-        self.controls_antSelect_group = QtWidgets.QGroupBox("Antenna")
-        self.controls_layout.addWidget(self.controls_antSelect_group)
+        # self.controls_antSelect_group = QtWidgets.QGroupBox("Antenna")
+        # self.controls_layout.addWidget(self.controls_antSelect_group)
 
         self.controls_typeSelect_layout = QtWidgets.QVBoxLayout(self.controls_typeSelect_group)
         self.controls_typeSelect_waveform = QtWidgets.QRadioButton("Waveform")
@@ -53,73 +56,8 @@ class MainWindow(QtWidgets.QWidget):
         self.controls_typeSelect_layout.addWidget(self.controls_typeSelect_waveform)
         self.controls_typeSelect_layout.addWidget(self.controls_typeSelect_fftPeaks)
         
-        self.controls_antSelect_layout = QtWidgets.QVBoxLayout(self.controls_antSelect_group)
-        self.controls_antSelect_tx = QtWidgets.QRadioButton("Transmitter")
-        self.controls_antSelect_tx.setChecked(True)
-        self.controls_antSelect_rx = QtWidgets.QRadioButton("Receiver")
-        self.controls_antSelect_layout.addWidget(self.controls_antSelect_tx)
-        self.controls_antSelect_layout.addWidget(self.controls_antSelect_rx)
-
-        self.controls_az_group = QtWidgets.QGroupBox("Azimuth")
-        self.controls_layout.addWidget(self.controls_az_group)
-        self.controls_az_layout = QtWidgets.QVBoxLayout(self.controls_az_group)
-        self.controls_az_start_frame = QtWidgets.QFrame()
-        self.controls_az_layout.addWidget(self.controls_az_start_frame)
-        self.controls_az_stop_frame = QtWidgets.QFrame()
-        self.controls_az_layout.addWidget(self.controls_az_stop_frame)
-        self.controls_az_step_frame = QtWidgets.QFrame()
-        self.controls_az_layout.addWidget(self.controls_az_step_frame)
-        self.controls_az_start_layout = QtWidgets.QHBoxLayout(self.controls_az_start_frame)
-        self.controls_az_start_label = QtWidgets.QLabel("Start")
-        self.controls_az_start_layout.addWidget(self.controls_az_start_label)
-        self.controls_az_start_text = QtWidgets.QLineEdit(text="-1.0")
-        self.controls_az_start_layout.addWidget(self.controls_az_start_text)
-        self.controls_az_stop_layout = QtWidgets.QHBoxLayout(self.controls_az_stop_frame)
-        self.controls_az_stop_label = QtWidgets.QLabel("Stop")
-        self.controls_az_stop_layout.addWidget(self.controls_az_stop_label)
-        self.controls_az_stop_text = QtWidgets.QLineEdit(text="1.0")
-        self.controls_az_stop_layout.addWidget(self.controls_az_stop_text)
-        self.controls_az_step_layout = QtWidgets.QHBoxLayout(self.controls_az_step_frame)
-        self.controls_az_step_label = QtWidgets.QLabel("Step")
-        self.controls_az_step_layout.addWidget(self.controls_az_step_label)
-        self.controls_az_step_text = QtWidgets.QLineEdit(text="1.0")
-        self.controls_az_step_layout.addWidget(self.controls_az_step_text)
-
-        self.controls_el_group = QtWidgets.QGroupBox("Elevation")
-        self.controls_layout.addWidget(self.controls_el_group)
-        self.controls_el_layout = QtWidgets.QVBoxLayout(self.controls_el_group)
-        self.controls_el_start_frame = QtWidgets.QFrame()
-        self.controls_el_layout.addWidget(self.controls_el_start_frame)
-        self.controls_el_stop_frame = QtWidgets.QFrame()
-        self.controls_el_layout.addWidget(self.controls_el_stop_frame)
-        self.controls_el_step_frame = QtWidgets.QFrame()
-        self.controls_el_layout.addWidget(self.controls_el_step_frame)
-        self.controls_el_start_layout = QtWidgets.QHBoxLayout(self.controls_el_start_frame)
-        self.controls_el_start_label = QtWidgets.QLabel("Start")
-        self.controls_el_start_layout.addWidget(self.controls_el_start_label)
-        self.controls_el_start_text = QtWidgets.QLineEdit(text="-1.0")
-        self.controls_el_start_layout.addWidget(self.controls_el_start_text)
-        self.controls_el_stop_layout = QtWidgets.QHBoxLayout(self.controls_el_stop_frame)
-        self.controls_el_stop_label = QtWidgets.QLabel("Stop")
-        self.controls_el_stop_layout.addWidget(self.controls_el_stop_label)
-        self.controls_el_stop_text = QtWidgets.QLineEdit(text="1.0")
-        # self.controls_el_stop_text.setSizeHint()
-        self.controls_el_stop_layout.addWidget(self.controls_el_stop_text)
-        self.controls_el_step_layout = QtWidgets.QHBoxLayout(self.controls_el_step_frame)
-        self.controls_el_step_label = QtWidgets.QLabel("Step")
-        self.controls_el_step_layout.addWidget(self.controls_el_step_label)
-        self.controls_el_step_text = QtWidgets.QLineEdit(text="1.0")
-        self.controls_el_step_layout.addWidget(self.controls_el_step_text)
-
-        self.controls_sweepType_group = QtWidgets.QGroupBox("Sweep Type")
-        self.controls_layout.addWidget(self.controls_sweepType_group)
-        self.controls_sweepType_layout = QtWidgets.QVBoxLayout(self.controls_sweepType_group)
-        self.controls_sweepType_serpentine = QtWidgets.QRadioButton("Serpentine")
-        self.controls_sweepType_serpentine.setChecked(True)
-        self.controls_sweepType_grid = QtWidgets.QRadioButton("Grid")
-        self.controls_sweepType_layout.addWidget(self.controls_sweepType_serpentine)
-        self.controls_sweepType_layout.addWidget(self.controls_sweepType_grid)
-
+        self.controls_dynamic_frame = QtWidgets.QFrame()
+        self.controls_layout.addWidget(self.controls_dynamic_frame)
 
         self.controls_startButton = QtWidgets.QPushButton("Start Sweep")
         self.controls_layout.addWidget(self.controls_startButton)
@@ -127,7 +65,6 @@ class MainWindow(QtWidgets.QWidget):
         self.controls_layout.addWidget(self.controls_pauseButton)
         self.controls_stopButton = QtWidgets.QPushButton("Stop Sweep")
         self.controls_layout.addWidget(self.controls_stopButton)
-
 
         self.manual_up = QtWidgets.QPushButton("Up", self.manual_group)
         self.manual_down = QtWidgets.QPushButton("Down", self.manual_group)
@@ -213,7 +150,7 @@ class MainWindow(QtWidgets.QWidget):
 
         # CONNECTIONS
         # self.controls_startButton.clicked.connect(self.start_btn_clicked)
-        self.controls_startButton.clicked.connect(self.start_btn_clicked)
+        # self.controls_startButton.clicked.connect(self.start_btn_clicked)
         self.manual_up.clicked.connect(self.up_btn_clicked)
         self.manual_left.clicked.connect(self.left_btn_clicked)
         self.manual_right.clicked.connect(self.right_btn_clicked)
