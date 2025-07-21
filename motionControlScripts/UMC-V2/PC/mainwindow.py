@@ -40,7 +40,8 @@ class MainWindow(QtWidgets.QWidget):
         self.log = logger(level=LOG_LEVEL.DEBUG)
         self.scope = ScopeController(logger=self.log)
 
-        self.jitter_controller = None
+        self.jitter_controller = JitterController()
+        self.jitter_controller.send_command_to_target.connect(self.on_send_command_to_target)
         
         self.sweepController = None
         self.readBuffer = QtCore.QByteArray()
@@ -128,9 +129,17 @@ class MainWindow(QtWidgets.QWidget):
 
         self.tx_ant = MotionPi("192.168.27.194", 12345, logger=self.log, retry_ms=5000, nickname="Tx Pi")
         self.tx_ant.connected.connect(self.connectedToServer_tx)
+        self.tx_ant.data_received.connect(self.on_tcp_data)
+        self.tx_ant.data_received.connect(self.jitter_controller.on_tcp_data)
+        self.tx_ant.awaiting_command.connect(self.lock_commands)
+        self.tx_ant.ready_for_command.connect(self.unlock_commands)
 
         self.rx_ant = MotionPi("192.168.27.154", 12345, logger=self.log, retry_ms=5000, nickname="Rx Pi")
         self.rx_ant.connected.connect(self.connectedToServer_rx)
+        self.rx_ant.awaiting_command.connect(self.lock_commands)
+        self.rx_ant.data_received.connect(self.on_tcp_data)
+        self.rx_ant.data_received.connect(self.jitter_controller.on_tcp_data)
+        self.rx_ant.ready_for_command.connect(self.unlock_commands)
 
 
         # Plotting
@@ -183,15 +192,15 @@ class MainWindow(QtWidgets.QWidget):
         # self.rx_reconn_timer.setInterval(5000)
         # self.rx_reconn_timer.timeout.connect(self.reconn_Rx)
 
-        self.cmd_timer_rx = QtCore.QTimer()
-        self.cmd_timer_rx.setSingleShot(True)
-        self.cmd_timer_rx.setInterval(30000)
-        self.cmd_timer_rx.timeout.connect(self.on_cmd_timeout)
+        # self.cmd_timer_rx = QtCore.QTimer()
+        # self.cmd_timer_rx.setSingleShot(True)
+        # self.cmd_timer_rx.setInterval(30000)
+        # self.cmd_timer_rx.timeout.connect(self.on_cmd_timeout)
         
-        self.cmd_timer_tx = QtCore.QTimer()
-        self.cmd_timer_tx.setSingleShot(True)
-        self.cmd_timer_tx.setInterval(30000)
-        self.cmd_timer_tx.timeout.connect(self.on_cmd_timeout)
+        # self.cmd_timer_tx = QtCore.QTimer()
+        # self.cmd_timer_tx.setSingleShot(True)
+        # self.cmd_timer_tx.setInterval(30000)
+        # self.cmd_timer_tx.timeout.connect(self.on_cmd_timeout)
 
         # Calling this to default the manual control window to the TX antenna
         self.antTx_selected()
@@ -255,7 +264,8 @@ class MainWindow(QtWidgets.QWidget):
             self.ant_sock = self.rx_ant
         else:
             self.ant_sock = self.tx_ant
-        self.ant_sock.readyRead.connect(self.on_tcp_data)
+        # self.ant_sock.readyRead.connect(self.on_tcp_data)
+        # self.ant_sock.data_received.connect(self.on_tcp_data)
         self.sweepController = sweepControl(el_start, el_stop, el_step, az_start, az_stop, az_step, scope=self.scope, point_order=point_order)
         self.sweepController.send_command.connect(self.send_cmd)
         self.responseRecv.connect(self.sweepController.on_res_received)
@@ -299,11 +309,11 @@ class MainWindow(QtWidgets.QWidget):
     @QtCore.Slot()
     def antTx_selected(self):
         self.ant_sock = self.tx_ant
-        self.ant_sock.readyRead.connect(self.on_tcp_data)
+        # self.ant_sock.readyRead.connect(self.on_tcp_data)
     @QtCore.Slot()
     def antRx_selected(self):
         self.ant_sock = self.rx_ant
-        self.ant_sock.readyRead.connect(self.on_tcp_data)
+        # self.ant_sock.readyRead.connect(self.on_tcp_data)
 
     @QtCore.Slot()
     def start_btn_clicked(self):
@@ -338,7 +348,8 @@ class MainWindow(QtWidgets.QWidget):
 
             if self.jitter_controller == None:
                 self.jitter_controller = JitterController(self.scope)
-            self.jitter_controller.startMeasurement(jitter_duration, side=None)
+            self.jitter_controller.setDuration(jitter_duration)
+            self.jitter_controller.start()
     
     @QtCore.Slot()
     def stop_btn_clicked(self):
@@ -527,49 +538,23 @@ class MainWindow(QtWidgets.QWidget):
 
     @QtCore.Slot(dict)
     def send_cmd(self, cmd):
-        # if self.ant_sock.bytesAvailable() > 0:
-        #     _ = self.ant_sock.readAll()
-        toSend = json.dumps(cmd)
-        self.log.debug(f"Sending Command {cmd}")
-        if self.ant_sock.bytesAvailable:
-            self.ant_sock.readAll()
-        self.ant_sock.write(f"{toSend}/UTOL".encode())
-        self.ant_sock.flush()
-        self.last_cmd = cmd
-        self.cmd_timer.start()
-
+        self.ant_sock.send_cmd(cmd)
+    @QtCore.Slot()
+    def lock_commands(self):
         self.manual_down.setEnabled(False)
         self.manual_up.setEnabled(False)
         self.manual_right.setEnabled(False)
         self.manual_left.setEnabled(False)
-
     @QtCore.Slot()
-    def on_tcp_data(self):
-        res = QtCore.QByteArray()
-        res.append(self.ant_sock.readAll())
-        check = res[-5:].data().decode()
-        self.readBuffer.append(res)
-        if check != "/UTOL":
-            return
-        self.log.debug("Stopping cmd_timer")
+    def unlock_commands(self):
         self.manual_down.setEnabled(True)
         self.manual_up.setEnabled(True)
         self.manual_right.setEnabled(True)
         self.manual_left.setEnabled(True)
-        self.cmd_timer.stop()
-        res = self.readBuffer
-        
-        if res.isNull():
-            self.log.error(f"NULL BYTES FROM TCP SOCKET")
-            return False, None
-        res_str = res.data().decode().split("/UTOL")[0]
-        self.log.debug(f"RES_STR: {res_str}")
-        f = open("test.txt", "w")
-        f.write(res_str)
-        f.close()
-        data = json.loads(res_str)
-        self.log.debug(f"JSON PARSED DATA: {data}")
 
+    @QtCore.Slot(str, dict)
+    def on_tcp_data(self, src, data):
+        self.log.debug(f"Main Window Processing TCP data from {src}")
         if data['cmd'] == "move":
             if data['args']['pl'] == "az":
                 self.cur_az += float(data['args']['deg'])
@@ -627,7 +612,7 @@ class MainWindow(QtWidgets.QWidget):
 
     @QtCore.Slot(str)
     def onNewMeasurementSelected(self, meas):
-        print(meas)
+        # print(meas)
 
         self.controlWidgets["Waveform"].hide()
         self.controlWidgets["FFT Peaks (Sweep)"].hide()
@@ -639,17 +624,13 @@ class MainWindow(QtWidgets.QWidget):
 
     @QtCore.Slot(dict, str)
     def on_send_command_to_target(self, cmd, target):
-        # if self.ant_sock.bytesAvailable() > 0:
-        #     _ = self.ant_sock.readAll()
-        toSend = json.dumps(cmd)
-        self.log.debug(f"Sending Command {cmd}")
         if (target == "tx"):
-            if self.ant_sock.bytesAvailable:
-                self.ant_sock.readAll()
-            self.ant_sock.write(f"{toSend}/UTOL".encode())
-            self.ant_sock.flush()
-        # self.last_cmd = cmd
-        # self.cmd_timer.start()
+            self.tx_ant.send_cmd(cmd)
+        elif (target == "rx"):
+            self.rx_ant.send_cmd(cmd)
+        else:
+            self.log.error(f"Unknown Target: {target}")
+            return
 
         self.manual_down.setEnabled(False)
         self.manual_up.setEnabled(False)
