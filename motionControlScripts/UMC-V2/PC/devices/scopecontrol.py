@@ -45,6 +45,9 @@ class ScopeController(QtWidgets.QWidget):
         except ValueError as ve:
             self.logger.warn(f"Couldn't connect to scope. Running as dummy...\n\tReason: {ve}")
             self.scope = None
+        except pyvisa.errors.VisaIOError as ve:
+            self.logger.warn(f"Couldn't connect to scope. Running as dummy...\n\tReason: {ve}")
+            self.scope = None
 
     def isConnected(self):
         return False if self.scope is None else True

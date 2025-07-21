@@ -49,6 +49,10 @@ class JitterController(QtCore.QThread):
         if self.side == SIDE.BOTH or self.side == SIDE.RX:
             self.send_command_to_target.emit(cmd, "rx")
 
+        self.test_timer.start()
+
+        
+
     def run(self):
         self.startMeasurement()
 

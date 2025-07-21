@@ -9,7 +9,7 @@ class MotionPi(QtWidgets.QWidget):
     awaiting_command = QtCore.Signal()
     ready_for_command = QtCore.Signal()
 
-    def __init__(self, ip_addr: str, port: int, retry_ms: int=None, logger=None, nickname=None, parent=None):
+    def __init__(self, ip_addr: str, port: int, logger, retry_ms: int=None, nickname=None, parent=None, dummy_mode=False):
         super().__init__(parent=parent)
         self.ip_addr = ip_addr
         self.port = port
@@ -25,9 +25,13 @@ class MotionPi(QtWidgets.QWidget):
         if self.logger is not None:
             self.logger.debug(f"[MOTION PI] Logging Socket for {self.nickname}")
 
-        self.socket = QtNetwork.QTcpSocket()
-        self.socket.connectToHost(self.ip_addr, self.port)
-        self.socket.errorOccurred.connect(self.failedToConnect)
+        if not dummy_mode:
+            self.socket = QtNetwork.QTcpSocket()
+            self.socket.connectToHost(self.ip_addr, self.port)
+            self.socket.errorOccurred.connect(self.failedToConnect)
+        else:
+            self.logger.warn(f"Launching Socket in dummy mode!")
+            self.socket = dummy_socket(self.logger)
 
         # self.socket.readyRead.connect(self.readyRead.emit)
         self.socket.readyRead.connect(self.onReadyRead)
@@ -43,7 +47,7 @@ class MotionPi(QtWidgets.QWidget):
         self.cmd_timer.setSingleShot(True)
         self.cmd_timer.setInterval(30000)
         self.cmd_timer.timeout.connect(self.on_cmd_timeout)
-        
+            
 
          
 
@@ -88,6 +92,7 @@ class MotionPi(QtWidgets.QWidget):
         
     @QtCore.Slot()
     def onReadyRead(self):
+        self.logger.debug(f"Ready Read!")
         res = QtCore.QByteArray()
         res.append(self.socket.readAll())
         check = res[-5:].data().decode()
@@ -113,4 +118,46 @@ class MotionPi(QtWidgets.QWidget):
         self.ready_for_command.emit()
         self.readBuffer = QtCore.QByteArray()
     
+class dummy_socket(QtWidgets.QWidget):
+    connected = QtCore.Signal()
+    readyRead = QtCore.Signal()
+    def __init__(self, logger):
+        super().__init__(parent=None)
+        self.logger = logger
+        self.logger.warn(f"Dummy socket initialized")
+        self.connected.emit()
+        self.az = 0
+        self.el = 0
+        self.buffer = QtCore.QByteArray()
+
+    def write(self, data_bytes):
+        self.logger.debug(f"Dummy socket writing! To Write: {data_bytes}")
+        data = json.loads(data_bytes.decode("utf-8").replace("/UTOL",""))
+        self.handle_cmd(data)
+        
     
+    def flush(self):
+        pass
+
+    def handle_cmd(self, cmd):
+        self.logger.debug(f"Dummy Socket handling cmd: {cmd['cmd']}")
+        if cmd['cmd'] == 'move':
+            res = cmd
+            res['res'] = {}
+
+            if cmd['args']['pl'] == 'az':
+                self.az += float(cmd['args']['deg'])
+                res['res']['ch'] = self.az
+            elif cmd['args']['pl'] == 'el':
+                self.el += float(cmd['args']['deg'])
+                res['res']['ch'] = self.pl
+            
+            res['res']['succ'] = True
+
+            self.buffer.append(json.dumps(res).encode('utf-8'))
+            self.readyRead.emit()
+    
+    def readAll(self):
+        toRet = self.buffer
+        self.buffer = QtCore.QByteArray()
+        return toRet
